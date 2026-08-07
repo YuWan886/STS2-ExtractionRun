@@ -2,7 +2,6 @@ using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.addons.mega_text;
 using MegaCrit.Sts2.Core.Nodes;
-using MegaCrit.Sts2.Core.Nodes.CommonUi;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.GameOverScreen;
 using MegaCrit.Sts2.Core.Runs;
@@ -155,10 +154,6 @@ public static class GameOverSettlementButtonPatch
             {
                 button.Disable();
             }
-
-            Entry.Logger.Info($"GameOverSettlementButtonPatch: mirror fired (mainMenu.Visible={mainMenu.Visible}, " +
-                              $"button.Visible={button.Visible}, button.Modulate={button.Modulate}, " +
-                              $"button.IsEnabled={button.IsEnabled}).");
         };
 
         Entry.Logger.Info("GameOverSettlementButtonPatch: settlement button added to game-over summary.");

@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Multiplayer.Game.Lobby;
@@ -68,11 +67,8 @@ public static class CharacterSelectPatch
             return;
         }
 
-        // Always stage the local player's persistent pending carry; it is only consumed by the extraction modifier.
         ExtractionCarrySync.StagePendingCarry(lobby, lobby.NetService.NetId);
 
-        // When launching from the warehouse hub (host / singleplayer), apply the extraction modifier to the lobby so
-        // it travels into the run on every machine. Clear the launch flag so it doesn't leak into later runs.
         if (ExtractionRunContext.IsExtractionLaunch)
         {
             ExtractionCarrySync.ApplyExtractionModifier(lobby);

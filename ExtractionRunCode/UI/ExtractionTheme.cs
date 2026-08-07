@@ -1,4 +1,3 @@
-using System;
 using Godot;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Localization.Fonts;
@@ -76,6 +75,7 @@ public static class ExtractionTheme
     public const string ButtonSecondary = "secondary";
     public const string ButtonRow = "row";
     public const string ButtonTile = "tile";
+    public const string ButtonTab = "tab";
 
     private static Theme? _theme;
     private static Font? _regular;
@@ -197,6 +197,18 @@ public static class ExtractionTheme
         return sb;
     }
 
+    /// <summary>Tab bar button (unselected). 未选中的 Tab 按钮。</summary>
+    private static StyleBoxFlat TabButtonBox(bool hovered)
+    {
+        return Box(hovered ? RowHover : Card, radius: 8, border: Border, borderWidth: 1);
+    }
+
+    /// <summary>Tab bar button (selected — primary accent border). 选中的 Tab 按钮（主题蓝描边）。</summary>
+    private static StyleBoxFlat TabButtonPressedBox()
+    {
+        return Box(CardRaised, radius: 8, border: Primary, borderWidth: 2);
+    }
+
     // ----- Item tiles (warehouse / carry card-form entries) -----
 
     /// <summary>Item tile surface: dark rounded card with a hairline border. 物品卡片表面。</summary>
@@ -231,6 +243,15 @@ public static class ExtractionTheme
     public static StyleBoxFlat GlyphBox(bool add)
     {
         return Box(add ? Primary : new Color("4A5568"), radius: 999);
+    }
+
+    /// <summary>Search input surface: dark card, primary border + slightly raised fill while focused. 搜索输入框表面。</summary>
+    private static StyleBoxFlat LineEditBox(bool focused)
+    {
+        StyleBoxFlat sb = Box(focused ? new Color("20293B") : Card, radius: 8,
+            border: focused ? Primary : Border, borderWidth: 1);
+        sb.SetContentMarginAll(10);
+        return sb;
     }
 
     private static StyleBoxFlat FocusBox() => Box(new Color(0f, 0f, 0f, 0f), radius: 9, border: Primary, borderWidth: 2);
@@ -280,6 +301,8 @@ public static class ExtractionTheme
             RowButtonBox(false), RowButtonBox(true), RowButtonPressedBox(), 15);
         RegisterButtonVariation(theme, ButtonTile, Text,
             TileBox(false), TileBox(true), TileBoxPressed(), FontSizeSmall);
+        RegisterButtonVariation(theme, ButtonTab, Text,
+            TabButtonBox(false), TabButtonBox(true), TabButtonPressedBox(), FontSizeBody);
 
         // ----- Thin flat scrollbars -----
         foreach (string scrollType in new[] { "VScrollBar", "HScrollBar" })
@@ -294,6 +317,18 @@ public static class ExtractionTheme
         // ----- Hairline separator -----
         theme.SetColor("separator", "HSeparator", Border);
         theme.SetConstant("separation", "HSeparator", 1);
+
+        // ----- LineEdit (warehouse search box): flat dark input. The clear button is a separate themed button
+        // (matching the game's own NSearchBar), not LineEdit.ClearButtonEnabled, so no dependency on a theme icon.
+        // ----- LineEdit（仓库搜索框）：扁平深色输入框。清除按钮为独立主题按钮（与游戏 NSearchBar 一致），
+        // 不用内置 ClearButtonEnabled，避免依赖主题图标。
+        theme.SetStylebox("normal", "LineEdit", LineEditBox(focused: false));
+        theme.SetStylebox("focus", "LineEdit", LineEditBox(focused: true));
+        theme.SetColor("font_color", "LineEdit", Text);
+        theme.SetColor("font_placeholder_color", "LineEdit", TextSecondary);
+        theme.SetColor("caret_color", "LineEdit", Primary);
+        theme.SetColor("font_selected_color", "LineEdit", Text);
+        theme.SetColor("selection_color", "LineEdit", new Color(Primary.R, Primary.G, Primary.B, 0.35f));
 
         return theme;
     }

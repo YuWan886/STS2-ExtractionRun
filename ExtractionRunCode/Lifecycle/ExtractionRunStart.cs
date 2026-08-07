@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Models;
@@ -48,7 +47,6 @@ public static class ExtractionRunStart
                 modifiers = pending;
                 ExtractionRunContext.PendingRunModifiers = null;
 
-                // RunState.CreateForNewRun reads the lobby's GameMode; force Custom so achievements/epochs lock.
                 PropertyInfo? gameModeProperty = typeof(StartRunLobby).GetProperty(nameof(StartRunLobby.GameMode));
                 if (gameModeProperty != null)
                 {

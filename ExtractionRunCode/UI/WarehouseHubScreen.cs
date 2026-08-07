@@ -1,8 +1,5 @@
-using System;
-using System.Collections.Generic;
 using Godot;
 using MegaCrit.Sts2.Core.Helpers;
-using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Runs;
@@ -16,27 +13,69 @@ namespace ExtractionRun.UI;
 /// <summary>
 /// The 搜打撤 warehouse hub: a full-screen overlay opened from the main menu. Shows the persistent warehouse
 /// (cards / relics / potions / gold), lets the player pick a carry config (deck ≤ MaxCarryCards, relics ≤
-/// MaxCarryRelics, potions ≤ slots, gold), seeds the warehouse on first use, and launches the run.
-/// Built as a modern flat card layout on top of <see cref="ExtractionTheme"/>: two floating dark cards on a dark
-/// background, adaptive via MarginContainer + VBox/HBox. Warehouse and carry items render as card-form tiles
-/// (art, name, source pool, quantity) in a wrapping <see cref="HFlowContainer"/> grid.
-/// 搜打撤仓库大厅：主菜单打开的全屏覆盖层。展示仓库、编辑携带配置、首次种子、发起跑局。扁平深色卡片式布局，
-/// 物品以卡片形式（贴图、名称、来源池、数量）在 HFlowContainer 网格中展示。
+/// MaxCarryRelics, potions ≤ slots, gold), seeds + migrates the warehouse on first open, and launches the run.
+/// The warehouse side is split into three tabs (cards / relics / potions) with per-tab search + multi-select filters
+/// (persisted in <see cref="WarehouseFilterState"/>), rendered by a pooled <see cref="VirtualizedItemGrid"/> with
+/// background art preload (<see cref="WarehouseCache"/>); the carry panel stays on the right and never tab-switches.
+/// 搜打撤仓库大厅：主菜单打开的全屏覆盖层。展示仓库、编辑携带配置、首次种子/迁移、发起跑局。仓库侧拆为卡牌/遗物/药水三个
+/// Tab，各自独立的搜索与多选过滤（持久化于 WarehouseFilterState），用池化虚拟网格 + 后台贴图预载渲染；携带面板常驻右侧。
 /// </summary>
 public sealed partial class WarehouseHubScreen : CanvasLayer
 {
     private const int GoldStep = 50;
+
+    /// <summary>
+    /// Soft per-tab variety cap as a dirty-data guard. Virtualization already bounds live nodes, so this only stops a
+    /// single tab from ever enumerating an absurd list. 每 Tab 软上限（脏数据护栏）：虚拟化已约束活动节点数，此上限仅防止单页枚举离谱数量。
+    /// </summary>
+    private const int MaxTileKinds = 2000;
+
+    /// <summary>Art preload requests submitted per frame. 每帧提交的贴图预载请求数。</summary>
+    private const int PrewarmPerFrame = 8;
+
+    private enum Tab { Cards, Relics, Potions }
+
+    private enum FilterKind
+    {
+        CardPools,
+        CardRarities,
+        CardTypes,
+        CardCosts,
+        RelicPools,
+        RelicRarities,
+        PotionPools,
+        PotionRarities,
+    }
 
     private readonly NSubmenuStack _stack;
     private readonly Control? _loadingOverlay;
     private readonly bool _isMultiplayerHost;
     private readonly WarehouseData _warehouse;
     private readonly CarryConfig _carry;
+    private int _carryGold;
 
-    // Rebuilt on every refresh; keep references to the flow containers only.
-    private HFlowContainer _cardList = null!;
-    private HFlowContainer _relicList = null!;
-    private HFlowContainer _potionList = null!;
+    private Tab _activeTab = Tab.Cards;
+
+    // Per-tab search queries (persisted). 各 Tab 搜索词（持久化）。
+    private readonly string[] _tabQueries = new string[3];
+    private string _query = "";
+
+    // ----- Controls -----
+    private LineEdit _searchEdit = null!;
+    private Button _clearButton = null!;
+    private Button _tabCards = null!;
+    private Button _tabRelics = null!;
+    private Button _tabPotions = null!;
+
+    private readonly VBoxContainer[] _tabContent = new VBoxContainer[3];
+    private readonly ScrollContainer[] _scrolls = new ScrollContainer[3];
+    private readonly VirtualizedItemGrid[] _grids = new VirtualizedItemGrid[3];
+    private readonly Label[] _limitHints = new Label[3];
+    private readonly Label[] _noMatchLabels = new Label[3];
+    private readonly Label[] _emptyLabels = new Label[3];
+    private readonly Dictionary<FilterKind, FilterDropdown> _filters = new();
+
+    // ----- Carry panel -----
     private HFlowContainer _carryCardList = null!;
     private HFlowContainer _carryRelicList = null!;
     private HFlowContainer _carryPotionList = null!;
@@ -47,7 +86,6 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     private Label _goldValueLabel = null!;
     private Button _startButton = null!;
     private Label _startHintLabel = null!;
-    private int _carryGold;
 
     public WarehouseHubScreen(NSubmenuStack stack, Control? loadingOverlay, bool isMultiplayerHost)
     {
@@ -56,17 +94,53 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         _isMultiplayerHost = isMultiplayerHost;
         Layer = 100;
 
-        // Seed on first open (idempotent) and load the live warehouse + pending carry.
+        // Seed on first open (idempotent), run the one-shot legacy normalization, then load the live warehouse +
+        // pending carry. 首次种子、一次性旧档归一、加载实时仓库与待发携带。
         WarehouseStore.EnsureSeeded();
+        WarehouseStore.EnsureNormalized();
         _warehouse = WarehouseStore.Current;
         _carry = PendingCarryStore.Current;
         _carryGold = _carry.Gold;
+
+        // A pending carry saved before the base-only change may still hold upgraded/enchanted items. Normalize it in
+        // place so carried items always match the (base-only) warehouse exactly — otherwise a stale +1 carry would
+        // consume a base copy while injecting the upgraded one (free upgrade). 旧档遗留的待发携带可能仍带升级/附魔；原地归一到
+        // 基础态，保证携带物与（仅基础态的）仓库精确匹配，否则旧 +1 携带会消耗基础卡却注入升级卡（白嫖升级）。
+        for (int i = 0; i < _carry.Cards.Count; i++)
+        {
+            _carry.Cards[i] = WarehouseStore.NormalizeCard(_carry.Cards[i]);
+        }
+
+        for (int i = 0; i < _carry.Relics.Count; i++)
+        {
+            _carry.Relics[i] = WarehouseStore.NormalizeRelic(_carry.Relics[i]);
+        }
+
+        for (int i = 0; i < _carry.Potions.Count; i++)
+        {
+            _carry.Potions[i] = WarehouseStore.NormalizePotion(_carry.Potions[i]);
+        }
+
+        // Defensive: a hand-edited/corrupt save could deserialize Filters as null.
+        _warehouse.Filters ??= new WarehouseFilterState();
+        _tabQueries[0] = _warehouse.Filters.QueryCards ?? "";
+        _tabQueries[1] = _warehouse.Filters.QueryRelics ?? "";
+        _tabQueries[2] = _warehouse.Filters.QueryPotions ?? "";
+        _query = _tabQueries[0];
     }
 
     public override void _Ready()
     {
         BuildUi();
         Refresh();
+    }
+
+    public override void _Process(double delta)
+    {
+        if (WarehouseCache.Tick(PrewarmPerFrame))
+        {
+            RefreshVisibleTextures();
+        }
     }
 
     private void BuildUi()
@@ -78,7 +152,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         root.Theme = ExtractionTheme.Instance;
         AddChild(root);
 
-        // Page gutters: generous negative space (16-24px per the design spec).
+        // Page gutters: generous negative space.
         var page = new MarginContainer();
         page.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         page.AddThemeConstantOverride("margin_left", 36);
@@ -141,30 +215,236 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         return header;
     }
 
-    // ----- Warehouse card (left, wider) -----
+    // ----- Warehouse card (left, wider): tabs + search + filters + virtualized grid -----
 
     private Control BuildWarehouseCard()
     {
         PanelContainer card = MakeCard(stretchRatio: 3f, out VBoxContainer body);
 
-        body.AddChild(MakeSectionHeader(ExtractionLocalization.SectionCardsText()));
-        _cardList = MakeList();
-        body.AddChild(Scroll(_cardList, stretchRatio: 2f));
+        body.AddChild(BuildTabBar());
+        body.AddChild(BuildSearchRow());
 
-        body.AddChild(new HSeparator());
+        _tabContent[(int)Tab.Cards] = BuildTabContent(Tab.Cards, BuildCardFilterArea(), _grids);
+        _tabContent[(int)Tab.Relics] = BuildTabContent(Tab.Relics, BuildRelicFilterArea(), _grids);
+        _tabContent[(int)Tab.Potions] = BuildTabContent(Tab.Potions, BuildPotionFilterArea(), _grids);
+        foreach (VBoxContainer tab in _tabContent)
+        {
+            body.AddChild(tab);
+        }
 
-        body.AddChild(MakeSectionHeader(ExtractionLocalization.SectionRelicsText()));
-        _relicList = MakeList();
-        body.AddChild(Scroll(_relicList, stretchRatio: 2f));
-
-        body.AddChild(new HSeparator());
-
-        body.AddChild(MakeSectionHeader(ExtractionLocalization.SectionPotionsText()));
-        _potionList = MakeList();
-        body.AddChild(Scroll(_potionList, stretchRatio: 2f));
-
+        _tabContent[(int)Tab.Cards].Visible = true;
+        _tabContent[(int)Tab.Relics].Visible = false;
+        _tabContent[(int)Tab.Potions].Visible = false;
         return card;
     }
+
+    private Control BuildTabBar()
+    {
+        var bar = new HBoxContainer();
+        bar.AddThemeConstantOverride("separation", 8);
+
+        var group = new ButtonGroup();
+        _tabCards = MakeTabButton(ExtractionLocalization.SectionCardsText(), group, Tab.Cards);
+        _tabRelics = MakeTabButton(ExtractionLocalization.SectionRelicsText(), group, Tab.Relics);
+        _tabPotions = MakeTabButton(ExtractionLocalization.SectionPotionsText(), group, Tab.Potions);
+        _tabCards.ButtonPressed = true;
+
+        bar.AddChild(_tabCards);
+        bar.AddChild(_tabRelics);
+        bar.AddChild(_tabPotions);
+        return bar;
+    }
+
+    private Button MakeTabButton(string text, ButtonGroup group, Tab tab)
+    {
+        // Equal thirds: each tab expands to fill the bar width. 三等分：每个 Tab 撑满整行。
+        var button = new Button
+        {
+            Text = text,
+            ThemeTypeVariation = ExtractionTheme.ButtonTab,
+            ToggleMode = true,
+            ButtonGroup = group,
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(0f, 40f),
+        };
+        button.Toggled += on =>
+        {
+            if (on)
+            {
+                SwitchTab(tab);
+            }
+        };
+        return button;
+    }
+
+    /// <summary>A single tab's content: filter dropdowns, then the per-tab hints, then the pooled virtual grid.
+    /// 单个 Tab 内容：过滤下拉、该 Tab 的提示标签、池化虚拟网格。</summary>
+    private VBoxContainer BuildTabContent(Tab tab, Control filterArea, VirtualizedItemGrid[] grids)
+    {
+        var box = new VBoxContainer
+        {
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
+            SizeFlagsStretchRatio = 2f,
+        };
+        box.AddThemeConstantOverride("separation", 8);
+        box.AddChild(filterArea);
+
+        var limit = MakeHintLabel();
+        var noMatch = MakeHintLabel();
+        var empty = MakeHintLabel();
+        box.AddChild(limit);
+        box.AddChild(noMatch);
+        box.AddChild(empty);
+        _limitHints[(int)tab] = limit;
+        _noMatchLabels[(int)tab] = noMatch;
+        _emptyLabels[(int)tab] = empty;
+
+        var scroll = new ScrollContainer
+        {
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
+            SizeFlagsStretchRatio = 2f,
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+        };
+        var grid = new VirtualizedItemGrid();
+        scroll.AddChild(grid);
+        box.AddChild(scroll);
+        _scrolls[(int)tab] = scroll;
+        grids[(int)tab] = grid;
+        return box;
+    }
+
+    private Label MakeHintLabel()
+    {
+        var label = new Label { Visible = false, HorizontalAlignment = HorizontalAlignment.Center };
+        label.AddThemeColorOverride("font_color", ExtractionTheme.TextSecondary);
+        label.AddThemeFontSizeOverride("font_size", ExtractionTheme.FontSizeSmall);
+        return label;
+    }
+
+    // ----- Filter dropdowns (multi-select, present-only options) -----
+
+    private Control BuildCardFilterArea()
+    {
+        // One row, content-width buttons (adaptive to the four card filters), left-aligned. 一行四个紧凑按钮（自适应过滤项）。
+        var row = new HBoxContainer();
+        row.AddThemeConstantOverride("separation", 8);
+        _filters[FilterKind.CardPools] = MakeFilterDropdown(ExtractionLocalization.FilterPoolText());
+        _filters[FilterKind.CardRarities] = MakeFilterDropdown(ExtractionLocalization.FilterRarityText());
+        _filters[FilterKind.CardTypes] = MakeFilterDropdown(ExtractionLocalization.FilterTypeText());
+        _filters[FilterKind.CardCosts] = MakeFilterDropdown(ExtractionLocalization.FilterCostText());
+        row.AddChild(_filters[FilterKind.CardPools]);
+        row.AddChild(_filters[FilterKind.CardRarities]);
+        row.AddChild(_filters[FilterKind.CardTypes]);
+        row.AddChild(_filters[FilterKind.CardCosts]);
+        return row;
+    }
+
+    private Control BuildRelicFilterArea()
+    {
+        var row = new HBoxContainer();
+        row.AddThemeConstantOverride("separation", 8);
+        _filters[FilterKind.RelicPools] = MakeFilterDropdown(ExtractionLocalization.FilterPoolText());
+        _filters[FilterKind.RelicRarities] = MakeFilterDropdown(ExtractionLocalization.FilterRarityText());
+        row.AddChild(_filters[FilterKind.RelicPools]);
+        row.AddChild(_filters[FilterKind.RelicRarities]);
+        return row;
+    }
+
+    private Control BuildPotionFilterArea()
+    {
+        var row = new HBoxContainer();
+        row.AddThemeConstantOverride("separation", 8);
+        _filters[FilterKind.PotionPools] = MakeFilterDropdown(ExtractionLocalization.FilterPoolText());
+        _filters[FilterKind.PotionRarities] = MakeFilterDropdown(ExtractionLocalization.FilterRarityText());
+        row.AddChild(_filters[FilterKind.PotionPools]);
+        row.AddChild(_filters[FilterKind.PotionRarities]);
+        return row;
+    }
+
+    private FilterDropdown MakeFilterDropdown(string title)
+    {
+        var dropdown = new FilterDropdown { Title = title };
+        dropdown.SelectionChanged += () =>
+        {
+            SaveFilters();
+            ResetActiveScroll();
+            Refresh();
+        };
+        return dropdown;
+    }
+
+    // ----- Search 搜索 -----
+
+    private Control BuildSearchRow()
+    {
+        var row = new HBoxContainer();
+        row.AddThemeConstantOverride("separation", 8);
+
+        _searchEdit = new LineEdit
+        {
+            Text = _query,
+            PlaceholderText = ExtractionLocalization.SearchPlaceholderText(),
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(0f, 40f),
+        };
+        _searchEdit.TextChanged += OnSearchTextChanged;
+        row.AddChild(_searchEdit);
+
+        // Explicit clear button (the game's own NSearchBar does the same rather than LineEdit.ClearButtonEnabled,
+        // so it stays themed by our palette). Visible only while a query is active.
+        _clearButton = MakeButton("×", ExtractionTheme.ButtonSecondary);
+        _clearButton.CustomMinimumSize = new Vector2(40f, 40f);
+        _clearButton.AddThemeFontSizeOverride("font_size", 18);
+        _clearButton.Visible = _query.Length > 0;
+        _clearButton.Pressed += ClearSearch;
+        row.AddChild(_clearButton);
+
+        return row;
+    }
+
+    private void OnSearchTextChanged(string text)
+    {
+        // Live filtering: every keystroke re-runs the active tab's filter against the cached groups.
+        _query = text.Trim().ToLowerInvariant();
+        _tabQueries[(int)_activeTab] = _query;
+        _clearButton.Visible = _query.Length > 0;
+        ResetActiveScroll();
+        Refresh();
+    }
+
+    private void ClearSearch()
+    {
+        _searchEdit.Text = "";
+        // Programmatic Text= does not reliably fire TextChanged in Godot — the game's own NSearchBar.ClearText
+        // manually re-emits QueryChanged for the same reason. Refresh explicitly so the full tab restores.
+        _query = "";
+        _tabQueries[(int)_activeTab] = "";
+        _clearButton.Visible = false;
+        ResetActiveScroll();
+        Refresh();
+    }
+
+    private void SwitchTab(Tab tab)
+    {
+        if (_activeTab == tab)
+        {
+            return;
+        }
+
+        _tabQueries[(int)_activeTab] = _query;
+        _activeTab = tab;
+        _query = _tabQueries[(int)tab];
+        _searchEdit.Text = _query; // Programmatic set: does not re-fire TextChanged.
+        _clearButton.Visible = _query.Length > 0;
+        for (int i = 0; i < 3; i++)
+        {
+            _tabContent[i].Visible = (Tab)i == tab;
+        }
+
+        Refresh();
+    }
+
+    private void ResetActiveScroll() => _scrolls[(int)_activeTab].ScrollVertical = 0;
 
     // ----- Carry card (right, narrower) -----
 
@@ -252,7 +532,6 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         footer.AddChild(row);
 
         // Hint shown while the carry is empty: the deck-clearing modifier would otherwise start a dead 0-card run.
-        // 携带为空时禁用开始按钮并提示，防止空牌组开跑。
         _startHintLabel = new Label
         {
             Text = ExtractionLocalization.NeedCardHintText(),
@@ -270,31 +549,25 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     {
         int max = Math.Min(_warehouse.Gold, WarehouseStore.MaxGold);
         _carryGold = Math.Clamp(_carryGold + delta, 0, max);
-        RefreshGoldLabel();
-    }
-
-    private void RefreshGoldLabel()
-    {
         _goldValueLabel.Text = _carryGold.ToString();
     }
 
-    /// <summary>Rebuilds every grid from the current warehouse + carry state. 从当前仓库与携带状态重建所有网格。</summary>
+    // ----- Refresh 重建 -----
+
+    /// <summary>
+    /// Rebuilds the carry panel, the active tab's filter options + grid, and the hints from the current state.
+    /// The warehouse itself is immutable during the hub session (only the carry mutates), so the grouped metadata and
+    /// art preload live in the module-level <see cref="WarehouseCache"/> and are never rebuilt here.
+    /// 从当前状态重建携带面板、活动 Tab 的过滤选项与网格、提示。仓库在大厅会话内不可变（只有携带在变），分组元数据与贴图
+    /// 预载都在模块级 WarehouseCache 中，这里不重建。
+    /// </summary>
     private void Refresh()
     {
-        ClearChildren(_cardList);
-        ClearChildren(_relicList);
-        ClearChildren(_potionList);
-        ClearChildren(_carryCardList);
-        ClearChildren(_carryRelicList);
-        ClearChildren(_carryPotionList);
+        WarehouseCache.Ensure(_warehouse);
 
-        // Live preview: the warehouse side shows what is still AVAILABLE after the items staged into the carry, so
-        // taking an item visibly decrements the warehouse count. Nothing is persisted until the run actually starts
-        // (ExtractionModifier.AfterRunCreated -> ConsumeCarried), so closing the hub without running loses nothing.
-        // 实时预览：仓库侧显示「扣除已携带后的可用数量」，取走物品时数量实时减少；真正扣减在开跑时由 ConsumeCarried 落盘。
         int availableGold = Math.Max(0, _warehouse.Gold - _carryGold);
         _goldChipLabel.Text = ExtractionLocalization.GoldWarehouseText(availableGold);
-        RefreshGoldLabel();
+        _goldValueLabel.Text = _carryGold.ToString();
 
         int maxCards = Math.Max(0, ExtractionSettingsPage.Current.MaxCarryCards);
         int maxRelics = Math.Max(0, ExtractionSettingsPage.Current.MaxCarryRelics);
@@ -302,87 +575,52 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         _carryRelicsLabel.Text = ExtractionLocalization.LimitRelicsText(_carry.Relics.Count, maxRelics);
         _carryPotionsLabel.Text = ExtractionLocalization.LimitPotionsText(_carry.Potions.Count, 3);
 
-        // Empty carry cannot start: ClearsPlayerDeck would give a dead 0-card deck. 空携带不可开跑。
+        // Empty carry cannot start: ClearsPlayerDeck would give a dead 0-card deck.
         bool canStart = _carry.Cards.Count > 0;
         _startButton.Disabled = !canStart;
         _startHintLabel.Visible = !canStart;
 
-        // Carried counts by item key, used to compute the available warehouse counts.
-        // 按物品键统计已携带数量，用于计算仓库可用数。
+        // Carried counts by item key (id-only), used to compute the available warehouse counts.
         var carriedCards = new Dictionary<string, int>();
-        foreach (var c in ExtractionItemTiles.GroupCards(_carry.Cards))
+        foreach (ExtractionItemTiles.CardGroup g in ExtractionItemTiles.GroupCards(_carry.Cards, loadArt: false))
         {
-            carriedCards[ExtractionItemTiles.CardKey(c)] = c.Count;
+            carriedCards[ExtractionItemTiles.CardKey(g)] = g.Count;
         }
 
         var carriedRelics = new Dictionary<string, int>();
-        foreach (var r in ExtractionItemTiles.GroupRelics(_carry.Relics))
+        foreach (ExtractionItemTiles.RelicGroup g in ExtractionItemTiles.GroupRelics(_carry.Relics, loadArt: false))
         {
-            carriedRelics[ExtractionItemTiles.RelicKey(r)] = r.Count;
+            carriedRelics[ExtractionItemTiles.RelicKey(g)] = g.Count;
         }
 
         var carriedPotions = new Dictionary<string, int>();
-        foreach (var p in ExtractionItemTiles.GroupPotions(_carry.Potions))
+        foreach (ExtractionItemTiles.PotionGroup g in ExtractionItemTiles.GroupPotions(_carry.Potions, loadArt: false))
         {
-            carriedPotions[ExtractionItemTiles.PotionKey(p)] = p.Count;
+            carriedPotions[ExtractionItemTiles.PotionKey(g)] = g.Count;
         }
 
-        if (_warehouse.Cards.Count == 0)
+        switch (_activeTab)
         {
-            AddEmptyState(_cardList, ExtractionLocalization.EmptyWarehouseText());
-        }
-        else
-        {
-            foreach (var g in ExtractionItemTiles.GroupCards(_warehouse.Cards))
-            {
-                int available = g.Count - carriedCards.GetValueOrDefault(ExtractionItemTiles.CardKey(g));
-                if (available <= 0)
-                {
-                    continue; // Every copy is already staged to carry.
-                }
-
-                _cardList.AddChild(ExtractionItemTiles.MakeItemTile(g.Name, g.Pool, available, g.Texture,
-                    ExtractionItemTiles.ItemTileAction.Add, () => AddToCarryCards(g.Rep)));
-            }
+            case Tab.Cards:
+                UpdateCardsTab(carriedCards);
+                break;
+            case Tab.Relics:
+                UpdateRelicsTab(carriedRelics);
+                break;
+            case Tab.Potions:
+                UpdatePotionsTab(carriedPotions);
+                break;
         }
 
-        if (_warehouse.Relics.Count == 0)
-        {
-            AddEmptyState(_relicList, ExtractionLocalization.EmptyWarehouseText());
-        }
-        else
-        {
-            foreach (var g in ExtractionItemTiles.GroupRelics(_warehouse.Relics))
-            {
-                int available = g.Count - carriedRelics.GetValueOrDefault(ExtractionItemTiles.RelicKey(g));
-                if (available <= 0)
-                {
-                    continue;
-                }
+        UpdateCarryTiles();
+        _clearButton.Visible = _query.Length > 0;
+    }
 
-                _relicList.AddChild(ExtractionItemTiles.MakeItemTile(g.Name, g.Pool, available, g.Texture,
-                    ExtractionItemTiles.ItemTileAction.Add, () => AddToCarryRelics(g.Rep)));
-            }
-        }
-
-        if (_warehouse.Potions.Count == 0)
-        {
-            AddEmptyState(_potionList, ExtractionLocalization.EmptyWarehouseText());
-        }
-        else
-        {
-            foreach (var g in ExtractionItemTiles.GroupPotions(_warehouse.Potions))
-            {
-                int available = g.Count - carriedPotions.GetValueOrDefault(ExtractionItemTiles.PotionKey(g));
-                if (available <= 0)
-                {
-                    continue;
-                }
-
-                _potionList.AddChild(ExtractionItemTiles.MakeItemTile(g.Name, g.Pool, available, g.Texture,
-                    ExtractionItemTiles.ItemTileAction.Add, () => AddToCarryPotions(g.Rep)));
-            }
-        }
+    private void UpdateCarryTiles()
+    {
+        ClearChildren(_carryCardList);
+        ClearChildren(_carryRelicList);
+        ClearChildren(_carryPotionList);
 
         if (_carry.Cards.Count == 0)
         {
@@ -390,12 +628,14 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         }
         else
         {
-            foreach (var g in ExtractionItemTiles.GroupCards(_carry.Cards))
+            foreach (ExtractionItemTiles.CardGroup g in ExtractionItemTiles.GroupCards(_carry.Cards, loadArt: false))
             {
-                _carryCardList.AddChild(ExtractionItemTiles.MakeItemTile(g.Name, g.Pool, g.Count, g.Texture,
-                    ExtractionItemTiles.ItemTileAction.Remove, () =>
+                SerializableCard rep = g.Rep;
+                _carryCardList.AddChild(ExtractionItemTiles.MakeItemTile(g.Name, g.Pool, g.Count,
+                    WarehouseCache.Resolve(g.PortraitPath), ExtractionItemTiles.ItemTileAction.Remove,
+                    () =>
                     {
-                        _carry.Cards.Remove(g.Rep);
+                        _carry.Cards.Remove(rep);
                         Refresh();
                     }));
             }
@@ -407,12 +647,14 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         }
         else
         {
-            foreach (var g in ExtractionItemTiles.GroupRelics(_carry.Relics))
+            foreach (ExtractionItemTiles.RelicGroup g in ExtractionItemTiles.GroupRelics(_carry.Relics, loadArt: false))
             {
-                _carryRelicList.AddChild(ExtractionItemTiles.MakeItemTile(g.Name, g.Pool, g.Count, g.Texture,
-                    ExtractionItemTiles.ItemTileAction.Remove, () =>
+                SerializableRelic rep = g.Rep;
+                _carryRelicList.AddChild(ExtractionItemTiles.MakeItemTile(g.Name, g.Pool, g.Count,
+                    WarehouseCache.Resolve(g.IconPath), ExtractionItemTiles.ItemTileAction.Remove,
+                    () =>
                     {
-                        _carry.Relics.Remove(g.Rep);
+                        _carry.Relics.Remove(rep);
                         Refresh();
                     }));
             }
@@ -424,17 +666,271 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         }
         else
         {
-            foreach (var g in ExtractionItemTiles.GroupPotions(_carry.Potions))
+            foreach (ExtractionItemTiles.PotionGroup g in ExtractionItemTiles.GroupPotions(_carry.Potions, loadArt: false))
             {
-                _carryPotionList.AddChild(ExtractionItemTiles.MakeItemTile(g.Name, g.Pool, g.Count, g.Texture,
-                    ExtractionItemTiles.ItemTileAction.Remove, () =>
+                SerializablePotion rep = g.Rep;
+                _carryPotionList.AddChild(ExtractionItemTiles.MakeItemTile(g.Name, g.Pool, g.Count,
+                    WarehouseCache.Resolve(g.ImagePath), ExtractionItemTiles.ItemTileAction.Remove,
+                    () =>
                     {
-                        _carry.Potions.Remove(g.Rep);
+                        _carry.Potions.Remove(rep);
                         Refresh();
                     }));
             }
         }
     }
+
+    /// <summary>Repopulates the visible tiles after a preload tick delivered art. 预载完成后重新填充可见瓦片。</summary>
+    private void RefreshVisibleTextures()
+    {
+        _grids[0].RefreshTextures();
+        _grids[1].RefreshTextures();
+        _grids[2].RefreshTextures();
+        UpdateCarryTiles();
+    }
+
+    // ----- Per-tab filtering 各 Tab 过滤 -----
+
+    private void UpdateCardsTab(Dictionary<string, int> carried)
+    {
+        IReadOnlyList<ExtractionItemTiles.CardGroup> varieties = WarehouseCache.Cards;
+
+        // Present-only filter options in canonical order (the sorted groups already walk pools in canonical order).
+        SetFilterOptions(_filters[FilterKind.CardPools],
+            varieties.Select(g => g.PoolSlug).Where(s => s.Length > 0).Distinct().ToList(),
+            _warehouse.Filters.CardPools, s => ExtractionLocalization.PoolNameText(s));
+        SetFilterOptions(_filters[FilterKind.CardRarities],
+            varieties.Select(g => g.Rarity).Distinct().OrderBy(r => (int)r).Select(r => r.ToString()).ToList(),
+            _warehouse.Filters.CardRarities, ExtractionLocalization.FilterRarityLabel);
+        SetFilterOptions(_filters[FilterKind.CardTypes],
+            varieties.Select(g => g.Type).Distinct().OrderBy(t => (int)t).Select(t => t.ToString()).ToList(),
+            _warehouse.Filters.CardTypes, ExtractionLocalization.FilterTypeLabel);
+        SetFilterOptions(_filters[FilterKind.CardCosts],
+            varieties.Select(g => g.Cost).Distinct().OrderBy(c => (int)c).Select(c => c.ToString()).ToList(),
+            _warehouse.Filters.CardCosts, ExtractionLocalization.FilterCostLabel);
+
+        List<VirtualizedItemGrid.RenderData> rows = BuildCardRows(varieties, carried);
+        _grids[(int)Tab.Cards].SetItems(rows);
+        UpdateTabHints(Tab.Cards, rows.Count, varieties.Count == 0, IsFilterActive(FilterKind.CardPools)
+            || IsFilterActive(FilterKind.CardRarities) || IsFilterActive(FilterKind.CardTypes)
+            || IsFilterActive(FilterKind.CardCosts));
+    }
+
+    private void UpdateRelicsTab(Dictionary<string, int> carried)
+    {
+        IReadOnlyList<ExtractionItemTiles.RelicGroup> varieties = WarehouseCache.Relics;
+
+        SetFilterOptions(_filters[FilterKind.RelicPools],
+            varieties.Select(g => g.PoolSlug).Where(s => s.Length > 0).Distinct().ToList(),
+            _warehouse.Filters.RelicPools, s => ExtractionLocalization.PoolNameText(s));
+        SetFilterOptions(_filters[FilterKind.RelicRarities],
+            varieties.Select(g => g.Rarity).Distinct().OrderBy(r => (int)r).Select(r => r.ToString()).ToList(),
+            _warehouse.Filters.RelicRarities, ExtractionLocalization.FilterRarityLabel);
+
+        List<VirtualizedItemGrid.RenderData> rows = BuildRelicRows(varieties, carried);
+        _grids[(int)Tab.Relics].SetItems(rows);
+        UpdateTabHints(Tab.Relics, rows.Count, varieties.Count == 0,
+            IsFilterActive(FilterKind.RelicPools) || IsFilterActive(FilterKind.RelicRarities));
+    }
+
+    private void UpdatePotionsTab(Dictionary<string, int> carried)
+    {
+        IReadOnlyList<ExtractionItemTiles.PotionGroup> varieties = WarehouseCache.Potions;
+
+        SetFilterOptions(_filters[FilterKind.PotionPools],
+            varieties.Select(g => g.PoolSlug).Where(s => s.Length > 0).Distinct().ToList(),
+            _warehouse.Filters.PotionPools, s => ExtractionLocalization.PoolNameText(s));
+        SetFilterOptions(_filters[FilterKind.PotionRarities],
+            varieties.Select(g => g.Rarity).Distinct().OrderBy(r => (int)r).Select(r => r.ToString()).ToList(),
+            _warehouse.Filters.PotionRarities, ExtractionLocalization.FilterRarityLabel);
+
+        List<VirtualizedItemGrid.RenderData> rows = BuildPotionRows(varieties, carried);
+        _grids[(int)Tab.Potions].SetItems(rows);
+        UpdateTabHints(Tab.Potions, rows.Count, varieties.Count == 0,
+            IsFilterActive(FilterKind.PotionPools) || IsFilterActive(FilterKind.PotionRarities));
+    }
+
+    private List<VirtualizedItemGrid.RenderData> BuildCardRows(
+        IReadOnlyList<ExtractionItemTiles.CardGroup> varieties, Dictionary<string, int> carried)
+    {
+        var rows = new List<VirtualizedItemGrid.RenderData>();
+        List<string> selPools = _warehouse.Filters.CardPools;
+        List<string> selRarities = _warehouse.Filters.CardRarities;
+        List<string> selTypes = _warehouse.Filters.CardTypes;
+        List<string> selCosts = _warehouse.Filters.CardCosts;
+        bool poolOn = selPools.Count > 0;
+        bool rarityOn = selRarities.Count > 0;
+        bool typeOn = selTypes.Count > 0;
+        bool costOn = selCosts.Count > 0;
+        string query = _query;
+
+        int filtered = 0;
+        foreach (ExtractionItemTiles.CardGroup g in varieties)
+        {
+            int available = g.Count - carried.GetValueOrDefault(ExtractionItemTiles.CardKey(g));
+            if (available <= 0)
+            {
+                continue; // Every copy is already staged to carry.
+            }
+
+            if (query.Length > 0 && !g.Haystack.Contains(query))
+            {
+                continue;
+            }
+
+            if ((poolOn && !selPools.Contains(g.PoolSlug))
+                || (rarityOn && !selRarities.Contains(g.Rarity.ToString()))
+                || (typeOn && !selTypes.Contains(g.Type.ToString()))
+                || (costOn && !selCosts.Contains(g.Cost.ToString())))
+            {
+                continue;
+            }
+
+            filtered++;
+            if (rows.Count >= MaxTileKinds)
+            {
+                continue; // Capped; counted toward the hint but not rendered.
+            }
+
+            SerializableCard rep = g.Rep;
+            rows.Add(new VirtualizedItemGrid.RenderData(g.Name, g.Pool, available,
+                () => WarehouseCache.Resolve(g.PortraitPath), ExtractionItemTiles.ItemTileAction.Add,
+                () => AddToCarryCards(rep)));
+        }
+
+        UpdateLimitHint(Tab.Cards, filtered, rows.Count);
+        return rows;
+    }
+
+    private List<VirtualizedItemGrid.RenderData> BuildRelicRows(
+        IReadOnlyList<ExtractionItemTiles.RelicGroup> varieties, Dictionary<string, int> carried)
+    {
+        var rows = new List<VirtualizedItemGrid.RenderData>();
+        List<string> selPools = _warehouse.Filters.RelicPools;
+        List<string> selRarities = _warehouse.Filters.RelicRarities;
+        bool poolOn = selPools.Count > 0;
+        bool rarityOn = selRarities.Count > 0;
+        string query = _query;
+
+        int filtered = 0;
+        foreach (ExtractionItemTiles.RelicGroup g in varieties)
+        {
+            int available = g.Count - carried.GetValueOrDefault(ExtractionItemTiles.RelicKey(g));
+            if (available <= 0)
+            {
+                continue;
+            }
+
+            if (query.Length > 0 && !g.Haystack.Contains(query))
+            {
+                continue;
+            }
+
+            if ((poolOn && !selPools.Contains(g.PoolSlug))
+                || (rarityOn && !selRarities.Contains(g.Rarity.ToString())))
+            {
+                continue;
+            }
+
+            filtered++;
+            if (rows.Count >= MaxTileKinds)
+            {
+                continue;
+            }
+
+            SerializableRelic rep = g.Rep;
+            rows.Add(new VirtualizedItemGrid.RenderData(g.Name, g.Pool, available,
+                () => WarehouseCache.Resolve(g.IconPath), ExtractionItemTiles.ItemTileAction.Add,
+                () => AddToCarryRelics(rep)));
+        }
+
+        UpdateLimitHint(Tab.Relics, filtered, rows.Count);
+        return rows;
+    }
+
+    private List<VirtualizedItemGrid.RenderData> BuildPotionRows(
+        IReadOnlyList<ExtractionItemTiles.PotionGroup> varieties, Dictionary<string, int> carried)
+    {
+        var rows = new List<VirtualizedItemGrid.RenderData>();
+        List<string> selPools = _warehouse.Filters.PotionPools;
+        List<string> selRarities = _warehouse.Filters.PotionRarities;
+        bool poolOn = selPools.Count > 0;
+        bool rarityOn = selRarities.Count > 0;
+        string query = _query;
+
+        int filtered = 0;
+        foreach (ExtractionItemTiles.PotionGroup g in varieties)
+        {
+            int available = g.Count - carried.GetValueOrDefault(ExtractionItemTiles.PotionKey(g));
+            if (available <= 0)
+            {
+                continue;
+            }
+
+            if (query.Length > 0 && !g.Haystack.Contains(query))
+            {
+                continue;
+            }
+
+            if ((poolOn && !selPools.Contains(g.PoolSlug))
+                || (rarityOn && !selRarities.Contains(g.Rarity.ToString())))
+            {
+                continue;
+            }
+
+            filtered++;
+            if (rows.Count >= MaxTileKinds)
+            {
+                continue;
+            }
+
+            SerializablePotion rep = g.Rep;
+            rows.Add(new VirtualizedItemGrid.RenderData(g.Name, g.Pool, available,
+                () => WarehouseCache.Resolve(g.ImagePath), ExtractionItemTiles.ItemTileAction.Add,
+                () => AddToCarryPotions(rep)));
+        }
+
+        UpdateLimitHint(Tab.Potions, filtered, rows.Count);
+        return rows;
+    }
+
+    private void SetFilterOptions(FilterDropdown dropdown, List<string> values, IReadOnlyList<string> persisted,
+        Func<string, string> label)
+    {
+        dropdown.SetOptions(values.Select(v => (v, label(v))));
+        dropdown.SetSelected(persisted);
+    }
+
+    private bool IsFilterActive(FilterKind kind) => _filters[kind].Selected.Count > 0;
+
+    /// <summary>Per-tab hint line when the per-section cap dropped some matching varieties. 每 Tab 封顶提示。</summary>
+    private void UpdateLimitHint(Tab tab, int filtered, int rendered)
+    {
+        bool capped = filtered > rendered;
+        _limitHints[(int)tab].Text = ExtractionLocalization.SearchLimitText(MaxTileKinds, filtered);
+        _limitHints[(int)tab].Visible = capped;
+    }
+
+    /// <summary>
+    /// Renders a tab's state lines: "warehouse empty" / "no match for this tab" / blank (all carried), plus the grid.
+    /// 渲染单 Tab 状态行：仓库为空 / 当前 Tab 无匹配 / 空白（已全部携带），以及网格。
+    /// </summary>
+    private void UpdateTabHints(Tab tab, int rendered, bool categoryEmpty, bool anyFilter)
+    {
+        bool noMatch = !categoryEmpty && rendered == 0 && anyFilter;
+        _emptyLabels[(int)tab].Text = ExtractionLocalization.EmptyWarehouseText();
+        _emptyLabels[(int)tab].Visible = categoryEmpty;
+        _noMatchLabels[(int)tab].Text = ExtractionLocalization.SearchNoMatchText(SectionTitle(tab));
+        _noMatchLabels[(int)tab].Visible = noMatch;
+        _grids[(int)tab].Visible = rendered > 0;
+    }
+
+    private static string SectionTitle(Tab tab) => tab switch
+    {
+        Tab.Cards => ExtractionLocalization.SectionCardsText(),
+        Tab.Relics => ExtractionLocalization.SectionRelicsText(),
+        _ => ExtractionLocalization.SectionPotionsText(),
+    };
 
     private static void ClearChildren(Node node)
     {
@@ -460,9 +956,6 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         empty.AddThemeFontSizeOverride("font_size", ExtractionTheme.FontSizeSmall);
         list.AddChild(empty);
     }
-
-    // Item grouping + tile rendering now live in ExtractionItemTiles (shared with the settlement screen).
-    // 物品分组与卡片渲染已抽到 ExtractionItemTiles（与结算界面共用）。
 
     private void AddToCarryCards(SerializableCard sc)
     {
@@ -497,28 +990,28 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         Refresh();
     }
 
-    private static string GetCardTitle(ModelId? id)
-    {
-        CardModel? card = id == null ? null : ModelDb.GetByIdOrNull<CardModel>(id);
-        return card?.Title ?? id?.ToString() ?? "?";
-    }
+    // ----- Persistence 持久化 -----
 
-    private static string GetRelicTitle(ModelId? id)
+    /// <summary>Copies the live hub filter/search state into <see cref="WarehouseData.Filters"/> (in-memory; persisted on close).
+    /// 把当前界面过滤/搜索状态写入 WarehouseData.Filters（内存；关闭时落盘）。</summary>
+    private void SaveFilters()
     {
-        RelicModel? relic = id == null ? null : ModelDb.GetByIdOrNull<RelicModel>(id);
-        return relic?.Title.GetFormattedText() ?? id?.ToString() ?? "?";
-    }
-
-    private static string GetPotionTitle(ModelId? id)
-    {
-        PotionModel? potion = id == null ? null : ModelDb.GetByIdOrNull<PotionModel>(id);
-        return potion?.Title.GetFormattedText() ?? id?.ToString() ?? "?";
+        _warehouse.Filters.QueryCards = _tabQueries[0];
+        _warehouse.Filters.QueryRelics = _tabQueries[1];
+        _warehouse.Filters.QueryPotions = _tabQueries[2];
+        _warehouse.Filters.CardPools = _filters[FilterKind.CardPools].Selected.ToList();
+        _warehouse.Filters.CardRarities = _filters[FilterKind.CardRarities].Selected.ToList();
+        _warehouse.Filters.CardTypes = _filters[FilterKind.CardTypes].Selected.ToList();
+        _warehouse.Filters.CardCosts = _filters[FilterKind.CardCosts].Selected.ToList();
+        _warehouse.Filters.RelicPools = _filters[FilterKind.RelicPools].Selected.ToList();
+        _warehouse.Filters.RelicRarities = _filters[FilterKind.RelicRarities].Selected.ToList();
+        _warehouse.Filters.PotionPools = _filters[FilterKind.PotionPools].Selected.ToList();
+        _warehouse.Filters.PotionRarities = _filters[FilterKind.PotionRarities].Selected.ToList();
     }
 
     private void StartRun()
     {
         // Defense-in-depth: the button is disabled when the carry is empty, but never launch a 0-card run.
-        // 兜底校验：按钮已在空携带时禁用，但绝不允许 0 牌组开跑。
         if (_carry.Cards.Count == 0)
         {
             Entry.Logger.Info("WarehouseHub: blocked empty-carry start (carry at least one card).");
@@ -529,6 +1022,9 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         PendingCarryStore.Set(_carry);
         Entry.Logger.Info($"WarehouseHub: starting extraction run with {_carry.Cards.Count} cards, " +
                           $"{_carry.Relics.Count} relics, {_carry.Potions.Count} potions, {_carry.Gold} gold.");
+
+        SaveFilters();
+        WarehouseStore.Persist();
 
         ExtractionRunContext.IsExtractionLaunch = true;
         CloseHub();
@@ -549,6 +1045,8 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
 
     private void CloseHub()
     {
+        SaveFilters();
+        WarehouseStore.Persist();
         QueueFree();
     }
 
@@ -606,7 +1104,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         return header;
     }
 
-    /// <summary>A wrapping grid of item tiles. 物品卡片自动换行网格。</summary>
+    /// <summary>A wrapping grid of small carry tiles. 携带区自动换行网格。</summary>
     private static HFlowContainer MakeList()
     {
         var box = new HFlowContainer

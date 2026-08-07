@@ -1,6 +1,7 @@
-using System;
-using System.Collections.Generic;
 using Godot;
+using MegaCrit.Sts2.Core.Entities.Cards;
+using MegaCrit.Sts2.Core.Entities.Potions;
+using MegaCrit.Sts2.Core.Entities.Relics;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Saves.Runs;
 
@@ -8,9 +9,12 @@ namespace ExtractionRun.UI;
 
 /// <summary>
 /// Shared card-form item tile rendering + grouping for the 搜打撤 UI (warehouse hub and extraction settlement).
-/// Groups duplicate serializable items by id (+ upgrade for cards), resolves name / source pool / art, and builds a
-/// clickable tile button showing art, name, source pool, quantity and an add/remove affordance.
-/// 搜打撤界面共用的物品卡片渲染与分组：按 id（卡牌含升级）合并重复项，解析名称/来源池/贴图，构建带增删角标的卡片按钮。
+/// Groups duplicate serializable items by id (cards merge across upgrade levels — the warehouse is base-only),
+/// resolves name / source pool / art / filter metadata (rarity, type, cost), and builds a clickable tile button
+/// showing art, name, source pool, quantity and an add/remove affordance.
+/// 搜打撤界面共用的物品卡片渲染与分组：按 id 合并重复项（卡牌跨升级合并——仓库只存基础态），解析名称/来源池/贴图/过滤元数据
+/// （稀有度/类型/费用），构建带增删角标的卡片按钮。瓦片拆成 CreateItemTile（建骨架）+ PopulateItemTile（填数据），
+/// 供虚拟网格复用，避免滚动时重建节点。
 /// </summary>
 public static class ExtractionItemTiles
 {
@@ -31,45 +35,100 @@ public static class ExtractionItemTiles
         Display,
     }
 
-    /// <summary>A group of identical items with one representative for add/remove and display metadata. 一组相同物品。</summary>
-    public sealed record CardGroup(SerializableCard Rep, string Name, string Pool, int Count, Texture2D? Texture);
+    /// <summary>Card cost filter buckets. 卡牌费用过滤桶。</summary>
+    public enum CostBucket
+    {
+        /// <summary>0-cost and unplayable (negative-cost) cards share one bucket. 0 费与不可打出（负费）同一桶。</summary>
+        Zero,
 
-    public sealed record RelicGroup(SerializableRelic Rep, string Name, string Pool, int Count, Texture2D? Texture);
+        One,
+        Two,
 
-    public sealed record PotionGroup(SerializablePotion Rep, string Name, string Pool, int Count, Texture2D? Texture);
+        /// <summary>3 or more. 3 费及以上。</summary>
+        ThreePlus,
+
+        /// <summary>X-cost cards. X 费卡。</summary>
+        X,
+    }
+
+    // ----- Grouped variety metadata (each group = one base item kind) -----
+
+    public sealed record CardGroup(SerializableCard Rep, string Name, string Pool, int Count, Texture2D? Texture,
+        CardRarity Rarity, CardType Type, CostBucket Cost, string PoolSlug, string PortraitPath, string Haystack);
+
+    public sealed record RelicGroup(SerializableRelic Rep, string Name, string Pool, int Count, Texture2D? Texture,
+        RelicRarity Rarity, string PoolSlug, string IconPath, string Haystack);
+
+    public sealed record PotionGroup(SerializablePotion Rep, string Name, string Pool, int Count, Texture2D? Texture,
+        PotionRarity Rarity, string PoolSlug, string ImagePath, string Haystack);
+
+    // ----- Canonical source-pool display order (by slug; language-independent) -----
+
+    private static readonly string[] CardPoolOrder =
+    {
+        "ironclad", "silent", "defect", "necrobinder", "regent",
+        "colorless", "curse", "status", "token", "event", "quest",
+    };
+
+    private static readonly string[] RelicPoolOrder =
+    {
+        "IroncladRelicPool", "SilentRelicPool", "DefectRelicPool", "NecrobinderRelicPool", "RegentRelicPool",
+        "SharedRelicPool", "EventRelicPool", "FallbackRelicPool", "DeprecatedRelicPool",
+    };
+
+    private static readonly string[] PotionPoolOrder =
+    {
+        "IroncladPotionPool", "SilentPotionPool", "DefectPotionPool", "NecrobinderPotionPool", "RegentPotionPool",
+        "SharedPotionPool", "EventPotionPool", "TokenPotionPool", "MockPotionPool", "DeprecatedPotionPool",
+    };
 
     // ----- Grouping 分组 -----
 
-    public static IEnumerable<CardGroup> GroupCards(IReadOnlyList<SerializableCard> cards)
+    /// <summary>
+    /// Groups cards by base id (upgrade levels merged — the warehouse stores base state only). Sorted by source pool
+    /// (canonical order) then rarity then id. When <paramref name="loadArt"/> is false (hub), textures are NOT touched
+    /// so the async-preload path can resolve them lazily instead of synchronously loading every portrait.
+    /// 按基础 id 分组（升级合并——仓库只存基础态），按来源池（规范序）→稀有度→id 排序。loadArt=false（大厅）时不触碰贴图，
+    /// 交由异步预加载路径延迟解析，避免首开同步加载全部立绘。
+    /// </summary>
+    public static List<CardGroup> GroupCards(IReadOnlyList<SerializableCard> cards, bool loadArt = true)
     {
-        var map = new Dictionary<(ModelId?, int), (SerializableCard Rep, int Count)>();
+        var map = new Dictionary<ModelId, (SerializableCard Rep, int Count)>();
         foreach (SerializableCard sc in cards)
         {
-            var key = (sc.Id, sc.CurrentUpgradeLevel);
-            if (map.TryGetValue(key, out (SerializableCard Rep, int Count) entry))
+            if (sc.Id is not ModelId id)
             {
-                map[key] = (entry.Rep, entry.Count + 1);
+                continue; 
+            }
+
+            if (map.TryGetValue(id, out (SerializableCard Rep, int Count) entry))
+            {
+                map[id] = (entry.Rep, entry.Count + 1);
             }
             else
             {
-                map[key] = (sc, 1);
+                map[id] = (sc, 1);
             }
         }
 
+        var groups = new List<CardGroup>(map.Count);
         foreach ((SerializableCard rep, int count) in map.Values)
         {
-            yield return new CardGroup(rep, CardName(rep), CardPoolName(rep.Id), count, CardTexture(rep.Id));
+            groups.Add(BuildCardGroup(rep, count, loadArt));
         }
+
+        groups.Sort(CompareCardGroups);
+        return groups;
     }
 
-    public static IEnumerable<RelicGroup> GroupRelics(IReadOnlyList<SerializableRelic> relics)
+    public static List<RelicGroup> GroupRelics(IReadOnlyList<SerializableRelic> relics, bool loadArt = true)
     {
         var map = new Dictionary<ModelId, (SerializableRelic Rep, int Count)>();
         foreach (SerializableRelic sr in relics)
         {
             if (sr.Id is not ModelId id)
             {
-                continue; // Corrupt / unloaded entry; nothing to display.
+                continue; 
             }
 
             if (map.TryGetValue(id, out (SerializableRelic Rep, int Count) entry))
@@ -82,20 +141,24 @@ public static class ExtractionItemTiles
             }
         }
 
+        var groups = new List<RelicGroup>(map.Count);
         foreach ((SerializableRelic rep, int count) in map.Values)
         {
-            yield return new RelicGroup(rep, GetRelicTitle(rep.Id), RelicPoolName(rep.Id), count, RelicTexture(rep.Id));
+            groups.Add(BuildRelicGroup(rep, count, loadArt));
         }
+
+        groups.Sort(CompareRelicGroups);
+        return groups;
     }
 
-    public static IEnumerable<PotionGroup> GroupPotions(IReadOnlyList<SerializablePotion> potions)
+    public static List<PotionGroup> GroupPotions(IReadOnlyList<SerializablePotion> potions, bool loadArt = true)
     {
         var map = new Dictionary<ModelId, (SerializablePotion Rep, int Count)>();
         foreach (SerializablePotion sp in potions)
         {
             if (sp.Id is not ModelId id)
             {
-                continue; // Corrupt / unloaded entry; nothing to display.
+                continue; 
             }
 
             if (map.TryGetValue(id, out (SerializablePotion Rep, int Count) entry))
@@ -108,18 +171,106 @@ public static class ExtractionItemTiles
             }
         }
 
+        var groups = new List<PotionGroup>(map.Count);
         foreach ((SerializablePotion rep, int count) in map.Values)
         {
-            yield return new PotionGroup(rep, GetPotionTitle(rep.Id), PotionPoolName(rep.Id), count, PotionTexture(rep.Id));
+            groups.Add(BuildPotionGroup(rep, count, loadArt));
         }
+
+        groups.Sort(ComparePotionGroups);
+        return groups;
+    }
+
+    private static CardGroup BuildCardGroup(SerializableCard rep, int count, bool loadArt)
+    {
+        CardModel? card = rep.Id == null ? null : ModelDb.GetByIdOrNull<CardModel>(rep.Id);
+        string name = card?.Title ?? rep.Id?.ToString() ?? "?";
+        string poolSlug = CardPoolSlug(rep.Id);
+        string pool = CardPoolName(rep.Id);
+        string haystack = string.Join(' ', name, pool, poolSlug, rep.Id?.ToString() ?? "").ToLowerInvariant();
+        return new CardGroup(rep, name, pool, count,
+            loadArt ? CardTexture(rep.Id) : null,
+            card?.Rarity ?? CardRarity.None,
+            card?.Type ?? CardType.None,
+            CardCostBucket(card),
+            poolSlug,
+            card?.PortraitPath ?? "",
+            haystack);
+    }
+
+    private static RelicGroup BuildRelicGroup(SerializableRelic rep, int count, bool loadArt)
+    {
+        RelicModel? relic = rep.Id == null ? null : ModelDb.GetByIdOrNull<RelicModel>(rep.Id);
+        string name = relic?.Title.GetFormattedText() ?? rep.Id?.ToString() ?? "?";
+        string poolSlug = RelicPoolSlug(rep.Id);
+        string pool = RelicPoolName(rep.Id);
+        string haystack = string.Join(' ', name, pool, poolSlug, rep.Id?.ToString() ?? "").ToLowerInvariant();
+        return new RelicGroup(rep, name, pool, count,
+            loadArt ? RelicTexture(rep.Id) : null,
+            relic?.Rarity ?? RelicRarity.None,
+            poolSlug,
+            relic?.IconPath ?? "",
+            haystack);
+    }
+
+    private static PotionGroup BuildPotionGroup(SerializablePotion rep, int count, bool loadArt)
+    {
+        PotionModel? potion = rep.Id == null ? null : ModelDb.GetByIdOrNull<PotionModel>(rep.Id);
+        string name = potion?.Title.GetFormattedText() ?? rep.Id?.ToString() ?? "?";
+        string poolSlug = PotionPoolSlug(rep.Id);
+        string pool = PotionPoolName(rep.Id);
+        string haystack = string.Join(' ', name, pool, poolSlug, rep.Id?.ToString() ?? "").ToLowerInvariant();
+        return new PotionGroup(rep, name, pool, count,
+            loadArt ? PotionTexture(rep.Id) : null,
+            potion?.Rarity ?? PotionRarity.None,
+            poolSlug,
+            potion?.ImagePath ?? "",
+            haystack);
     }
 
     /// <summary>
-    /// Stable key used to line up warehouse vs carried counts for the hub's live preview. 用于对齐仓库/携带数量的键。
+    /// Cost filter bucket for a card: X-cost → <see cref="CostBucket.X"/>; canonical energy cost ≤ 0 (0-cost and
+    /// unplayable/status) → <see cref="CostBucket.Zero"/>; else 1 / 2 / 3+. The play cost is the ENERGY cost, not the
+    /// star cost. 卡牌费用桶：X 费 → X；规范能量费 ≤ 0（0 费与不可打出/状态）→ 0 费；其余 1/2/3+。卡面资源是能量费而非辉星费。
     /// </summary>
-    public static string Key(ModelId? id, int upgrade = 0) => id == null ? $"<null>|{upgrade}" : $"{id}|{upgrade}";
+    public static CostBucket CardCostBucket(CardModel? card)
+    {
+        if (card == null)
+        {
+            return CostBucket.Zero;
+        }
 
-    public static string CardKey(CardGroup g) => Key(g.Rep.Id, g.Rep.CurrentUpgradeLevel);
+        CardEnergyCost cost = card.EnergyCost;
+        if (cost.CostsX)
+        {
+            return CostBucket.X;
+        }
+
+        int canonical = cost.Canonical;
+        if (canonical <= 0)
+        {
+            return CostBucket.Zero;
+        }
+
+        if (canonical == 1)
+        {
+            return CostBucket.One;
+        }
+
+        if (canonical == 2)
+        {
+            return CostBucket.Two;
+        }
+
+        return CostBucket.ThreePlus;
+    }
+
+    /// <summary>
+    /// Stable key used to line up warehouse vs carried counts for the hub's live preview (id-only). 用于对齐仓库/携带数量的键（仅 id）。
+    /// </summary>
+    public static string Key(ModelId? id) => id?.ToString() ?? "<null>";
+
+    public static string CardKey(CardGroup g) => Key(g.Rep.Id);
 
     public static string RelicKey(RelicGroup g) => Key(g.Rep.Id);
 
@@ -128,21 +279,35 @@ public static class ExtractionItemTiles
     // ----- Tile rendering 卡片渲染 -----
 
     /// <summary>
-    /// Builds one item tile: art, name, source pool, quantity badge, and an add/remove affordance.
-    /// 构建一张物品卡片：贴图、名称、来源池、数量角标与增删操作。
+    /// Builds one item tile: art, name, source pool, quantity badge, and an add/remove affordance. Convenience wrapper
+    /// over <see cref="CreateItemTile"/> + <see cref="PopulateItemTile"/> for one-shot tiles (carry, settlement).
+    /// 构建一张物品卡片：贴图、名称、来源池、数量角标与增删操作（一次性瓦片的便捷封装）。
     /// </summary>
     public static Button MakeItemTile(string name, string pool, int count, Texture2D? texture,
         ItemTileAction action, Action? onClick)
+    {
+        Button button = CreateItemTile();
+        PopulateItemTile(button, name, pool, count, texture, action);
+        if (onClick != null)
+        {
+            button.Pressed += onClick;
+        }
+
+        return button;
+    }
+
+    /// <summary>
+    /// Creates a tile's full skeleton (art well, labels, badge, glyph) without binding data. The virtual grid pools
+    /// these and re-populates them on scroll. Child refs are stashed as Meta on the button. 创建瓦片完整骨架（不含数据），
+    /// 供虚拟网格池化复用；子节点引用以 Meta 存于按钮上。
+    /// </summary>
+    public static Button CreateItemTile()
     {
         var button = new Button
         {
             ThemeTypeVariation = ExtractionTheme.ButtonTile,
             CustomMinimumSize = new Vector2(TileWidth, TileHeight),
         };
-        if (onClick != null)
-        {
-            button.Pressed += onClick;
-        }
 
         var inner = new MarginContainer();
         inner.SetAnchorsPreset(Control.LayoutPreset.FullRect);
@@ -158,7 +323,6 @@ public static class ExtractionItemTiles
         vbox.MouseFilter = Control.MouseFilterEnum.Ignore;
         inner.AddChild(vbox);
 
-        // Art well: a recessed dark panel the texture sits in.
         var well = new Panel
         {
             CustomMinimumSize = new Vector2(0f, 56f),
@@ -170,7 +334,6 @@ public static class ExtractionItemTiles
 
         var art = new TextureRect
         {
-            Texture = texture,
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             MouseFilter = Control.MouseFilterEnum.Ignore,
@@ -181,7 +344,6 @@ public static class ExtractionItemTiles
         // Name.
         var nameLabel = new Label
         {
-            Text = name,
             HorizontalAlignment = HorizontalAlignment.Center,
             AutowrapMode = TextServer.AutowrapMode.Off,
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
@@ -194,7 +356,6 @@ public static class ExtractionItemTiles
         // Source pool.
         var poolLabel = new Label
         {
-            Text = pool,
             HorizontalAlignment = HorizontalAlignment.Center,
             AutowrapMode = TextServer.AutowrapMode.Off,
             TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
@@ -214,7 +375,6 @@ public static class ExtractionItemTiles
         badge.AddThemeStyleboxOverride("panel", ExtractionTheme.BadgeBox());
         var badgeLabel = new Label
         {
-            Text = $"×{count}",
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
             MouseFilter = Control.MouseFilterEnum.Ignore,
@@ -224,42 +384,59 @@ public static class ExtractionItemTiles
         badge.AddChild(badgeLabel);
         button.AddChild(badge);
 
-        // Add / remove glyph (top-left); display tiles have none.
-        if (action != ItemTileAction.Display)
+        // Add / remove glyph (top-left); hidden for display tiles.
+        var glyph = new PanelContainer
         {
-            bool add = action == ItemTileAction.Add;
-            var glyph = new PanelContainer
-            {
-                Position = new Vector2(4f, 4f),
-                Size = new Vector2(24f, 24f),
-                MouseFilter = Control.MouseFilterEnum.Ignore,
-            };
-            glyph.AddThemeStyleboxOverride("panel", ExtractionTheme.GlyphBox(add));
-            var glyphLabel = new Label
-            {
-                Text = add ? "+" : "-",
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                MouseFilter = Control.MouseFilterEnum.Ignore,
-            };
-            glyphLabel.AddThemeFontSizeOverride("font_size", 16);
-            glyphLabel.AddThemeColorOverride("font_color", Colors.White);
-            glyph.AddChild(glyphLabel);
-            button.AddChild(glyph);
-        }
+            Position = new Vector2(4f, 4f),
+            Size = new Vector2(24f, 24f),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        glyph.AddThemeStyleboxOverride("panel", ExtractionTheme.GlyphBox(add: true));
+        var glyphLabel = new Label
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        glyphLabel.AddThemeFontSizeOverride("font_size", 16);
+        glyphLabel.AddThemeColorOverride("font_color", Colors.White);
+        glyph.AddChild(glyphLabel);
+        button.AddChild(glyph);
 
+        button.SetMeta("_name", nameLabel);
+        button.SetMeta("_pool", poolLabel);
+        button.SetMeta("_art", art);
+        button.SetMeta("_badge", badgeLabel);
+        button.SetMeta("_glyph", glyph);
+        button.SetMeta("_glyphLabel", glyphLabel);
         return button;
     }
 
-    // ----- Model lookups 模型解析 -----
-
-    private static string CardName(SerializableCard sc)
+    /// <summary>
+    /// Re-binds a pooled tile to new data (name / pool / count / texture / action). Idempotent — safe to call on an
+    /// already-populated tile. 把池化瓦片重新绑定到新数据（名称/池/数量/贴图/角色）。
+    /// </summary>
+    public static void PopulateItemTile(Button button, string name, string pool, int count, Texture2D? texture,
+        ItemTileAction action)
     {
-        string title = GetCardTitle(sc.Id);
-        return sc.CurrentUpgradeLevel > 0
-            ? $"{title}  {ExtractionLocalization.CardUpgradeText(sc.CurrentUpgradeLevel)}"
-            : title;
+        GetMetaLabel(button, "_name").Text = name;
+        GetMetaLabel(button, "_pool").Text = pool;
+        GetMetaNode<TextureRect>(button, "_art").Texture = texture;
+        GetMetaLabel(button, "_badge").Text = $"×{count}";
+
+        bool display = action == ItemTileAction.Display;
+        bool add = action == ItemTileAction.Add;
+        var glyph = GetMetaNode<PanelContainer>(button, "_glyph");
+        glyph.Visible = !display;
+        glyph.AddThemeStyleboxOverride("panel", ExtractionTheme.GlyphBox(add));
+        GetMetaLabel(button, "_glyphLabel").Text = add ? "+" : "-";
     }
+
+    private static Label GetMetaLabel(Button button, string key) => button.GetMeta(key).As<Label>();
+
+    private static T GetMetaNode<[MustBeVariant] T>(Button button, string key) => button.GetMeta(key).As<T>();
+
+    // ----- Model lookups 模型解析 -----
 
     public static string GetCardTitle(ModelId? id)
     {
@@ -318,12 +495,17 @@ public static class ExtractionItemTiles
         }
     }
 
-    private static string CardPoolName(ModelId? id)
+    /// <summary>
+    /// Raw source-pool slug for a card (search haystack + pool filter). Card pools use <c>Pool.Title</c> — a distinct
+    /// lowercase slug per pool (ironclad / silent / … / colorless / curse / status / token / event / quest).
+    /// 卡牌来源池原始 slug（搜索/池过滤用）：用 Pool.Title，每池一个独立小写 slug。
+    /// </summary>
+    public static string CardPoolSlug(ModelId? id)
     {
         try
         {
             CardModel? card = id == null ? null : ModelDb.GetByIdOrNull<CardModel>(id);
-            return card?.Pool == null ? string.Empty : ExtractionLocalization.PoolNameText(card.Pool.Title);
+            return card?.Pool?.Title ?? string.Empty;
         }
         catch (Exception)
         {
@@ -331,12 +513,21 @@ public static class ExtractionItemTiles
         }
     }
 
-    private static string RelicPoolName(ModelId? id)
+    private static string CardPoolName(ModelId? id) => ExtractionLocalization.PoolNameText(CardPoolSlug(id));
+
+    /// <summary>
+    /// Raw source-pool slug for a relic (search haystack + pool filter). Relic pools classify by CLASS NAME
+    /// (SharedRelicPool / IroncladRelicPool / …) — <see cref="RelicPoolModel.EnergyColorName"/> would collapse
+    /// shared/event/fallback/deprecated into one "colorless" bucket, losing the granularity the pool filter wants.
+    /// 遗物来源池 slug（搜索/池过滤用）：按池类名（SharedRelicPool / IroncladRelicPool / …）分类——EnergyColorName 会把
+    /// shared/event/fallback/deprecated 全部塌缩成一个 colorless，粒度不够。
+    /// </summary>
+    public static string RelicPoolSlug(ModelId? id)
     {
         try
         {
             RelicModel? relic = id == null ? null : ModelDb.GetByIdOrNull<RelicModel>(id);
-            return relic == null ? string.Empty : ExtractionLocalization.PoolNameText(relic.Pool.EnergyColorName);
+            return relic?.Pool?.GetType().Name ?? string.Empty;
         }
         catch (Exception)
         {
@@ -344,16 +535,126 @@ public static class ExtractionItemTiles
         }
     }
 
-    private static string PotionPoolName(ModelId? id)
+    private static string RelicPoolName(ModelId? id) => ExtractionLocalization.PoolNameText(RelicPoolSlug(id));
+
+    /// <summary>
+    /// Raw source-pool slug for a potion (class name, like relics). 药水来源池 slug（同遗物，按类名）。
+    /// </summary>
+    public static string PotionPoolSlug(ModelId? id)
     {
         try
         {
             PotionModel? potion = id == null ? null : ModelDb.GetByIdOrNull<PotionModel>(id);
-            return potion == null ? string.Empty : ExtractionLocalization.PoolNameText(potion.Pool.EnergyColorName);
+            return potion?.Pool?.GetType().Name ?? string.Empty;
         }
         catch (Exception)
         {
             return string.Empty;
         }
     }
+
+    private static string PotionPoolName(ModelId? id) => ExtractionLocalization.PoolNameText(PotionPoolSlug(id));
+
+    // ----- Sorting 排序 -----
+
+    private static int CompareCardGroups(CardGroup a, CardGroup b)
+    {
+        int byPool = PoolOrderIndex(CardPoolOrder, a.PoolSlug).CompareTo(PoolOrderIndex(CardPoolOrder, b.PoolSlug));
+        if (byPool != 0)
+        {
+            return byPool;
+        }
+
+        int byRarity = CardRarityIndex(a.Rarity).CompareTo(CardRarityIndex(b.Rarity));
+        if (byRarity != 0)
+        {
+            return byRarity;
+        }
+
+        return string.CompareOrdinal(a.Rep.Id?.ToString(), b.Rep.Id?.ToString());
+    }
+
+    private static int CompareRelicGroups(RelicGroup a, RelicGroup b)
+    {
+        int byPool = PoolOrderIndex(RelicPoolOrder, a.PoolSlug).CompareTo(PoolOrderIndex(RelicPoolOrder, b.PoolSlug));
+        if (byPool != 0)
+        {
+            return byPool;
+        }
+
+        int byRarity = RelicRarityIndex(a.Rarity).CompareTo(RelicRarityIndex(b.Rarity));
+        if (byRarity != 0)
+        {
+            return byRarity;
+        }
+
+        return string.CompareOrdinal(a.Rep.Id?.ToString(), b.Rep.Id?.ToString());
+    }
+
+    private static int ComparePotionGroups(PotionGroup a, PotionGroup b)
+    {
+        int byPool = PoolOrderIndex(PotionPoolOrder, a.PoolSlug).CompareTo(PoolOrderIndex(PotionPoolOrder, b.PoolSlug));
+        if (byPool != 0)
+        {
+            return byPool;
+        }
+
+        int byRarity = PotionRarityIndex(a.Rarity).CompareTo(PotionRarityIndex(b.Rarity));
+        if (byRarity != 0)
+        {
+            return byRarity;
+        }
+
+        return string.CompareOrdinal(a.Rep.Id?.ToString(), b.Rep.Id?.ToString());
+    }
+
+    private static int PoolOrderIndex(string[] order, string slug)
+    {
+        for (int i = 0; i < order.Length; i++)
+        {
+            if (order[i] == slug)
+            {
+                return i;
+            }
+        }
+
+        return int.MaxValue;
+    }
+
+    private static int CardRarityIndex(CardRarity rarity) => rarity switch
+    {
+        CardRarity.Basic => 0,
+        CardRarity.Common => 1,
+        CardRarity.Uncommon => 2,
+        CardRarity.Rare => 3,
+        CardRarity.Event => 4,
+        CardRarity.Token => 5,
+        CardRarity.Status => 6,
+        CardRarity.Curse => 7,
+        CardRarity.Quest => 8,
+        CardRarity.Ancient => 9,
+        _ => 10,
+    };
+
+    private static int RelicRarityIndex(RelicRarity rarity) => rarity switch
+    {
+        RelicRarity.Starter => 0,
+        RelicRarity.Common => 1,
+        RelicRarity.Uncommon => 2,
+        RelicRarity.Rare => 3,
+        RelicRarity.Shop => 4,
+        RelicRarity.Event => 5,
+        RelicRarity.Ancient => 6,
+        _ => 7,
+    };
+
+    private static int PotionRarityIndex(PotionRarity rarity) => rarity switch
+    {
+        PotionRarity.Common => 0,
+        PotionRarity.Uncommon => 1,
+        PotionRarity.Rare => 2,
+        PotionRarity.Event => 3,
+        PotionRarity.Token => 4,
+        _ => 5,
+    };
 }

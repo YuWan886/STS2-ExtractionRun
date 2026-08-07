@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using System.Linq;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Relics;
 using MegaCrit.Sts2.Core.Models;
@@ -51,6 +49,7 @@ public static class WarehouseStore
             }
 
             data.Seeded = true;
+            data.Version++;
             data.Gold = ClampGold(data.Gold + 1000);
 
             foreach (CardModel card in ModelDb.AllCards
@@ -58,7 +57,7 @@ public static class WarehouseStore
                          .GroupBy(c => c.Id)
                          .Select(g => g.First()))
             {
-                data.Cards.Add(card.ToMutable().ToSerializable());
+                data.Cards.Add(NormalizeCard(card.ToMutable().ToSerializable()));
             }
 
             foreach (RelicModel relic in ModelDb.AllRelics
@@ -66,15 +65,63 @@ public static class WarehouseStore
                          .GroupBy(r => r.Id)
                          .Select(g => g.First()))
             {
-                data.Relics.Add(relic.ToMutable().ToSerializable());
+                data.Relics.Add(NormalizeRelic(relic.ToMutable().ToSerializable()));
             }
         });
         store.Save(DataKey);
     }
 
     /// <summary>
-    /// Deposits extraction loot into the warehouse. Appends (a deck clone never reaches here — see DepositFilter).
-    /// 把撤离战利品追加存入仓库。
+    /// One-shot legacy migration: warehouses written before the base-only change may hold upgraded / enchanted /
+    /// prop-carrying cards and relics. Normalize every entry to its base state on first open after the update, so the
+    /// hub's id-based grouping, the carry preview and the consume matching all line up. Idempotent — guarded by
+    /// <see cref="WarehouseData.Normalized"/>. 一次性旧档迁移：基础化改动前的仓库可能存有升级/附魔/带属性的卡与遗物，
+    /// 更新后首次打开原地归一，保证按 id 分组、携带预览与消耗匹配一致。
+    /// </summary>
+    public static void EnsureNormalized()
+    {
+        var store = RitsuLibFramework.GetDataStore(Entry.ModId);
+        store.Modify<WarehouseData>(DataKey, data =>
+        {
+            if (data.Normalized)
+            {
+                return;
+            }
+
+            data.Normalized = true;
+            data.Version++;
+
+            for (int i = 0; i < data.Cards.Count; i++)
+            {
+                data.Cards[i] = NormalizeCard(data.Cards[i]);
+            }
+
+            for (int i = 0; i < data.Relics.Count; i++)
+            {
+                data.Relics[i] = NormalizeRelic(data.Relics[i]);
+            }
+
+            for (int i = 0; i < data.Potions.Count; i++)
+            {
+                data.Potions[i] = NormalizePotion(data.Potions[i]);
+            }
+        });
+        store.Save(DataKey);
+    }
+
+    /// <summary>
+    /// Persists the live warehouse state (used for the hub's in-memory filter/search state before close).
+    /// 持久化当前仓库（用于关闭仓库前把界面过滤/搜索状态落盘）。
+    /// </summary>
+    public static void Persist()
+    {
+        RitsuLibFramework.GetDataStore(Entry.ModId).Save(DataKey);
+    }
+
+    /// <summary>
+    /// Deposits extraction loot into the warehouse. Every item is normalized to its BASE state first (upgrades,
+    /// enchantments, props, potion slot indices are stripped) — the warehouse only ever holds plain cards. Appends
+    /// (a deck clone never reaches here — see DepositFilter). 把撤离战利品追加存入仓库，进库前统一归一到基础态。
     /// </summary>
     public static void Deposit(IEnumerable<SerializableCard>? cards, IEnumerable<SerializableRelic>? relics,
         IEnumerable<SerializablePotion>? potions, int gold)
@@ -82,19 +129,21 @@ public static class WarehouseStore
         var store = RitsuLibFramework.GetDataStore(Entry.ModId);
         store.Modify<WarehouseData>(DataKey, data =>
         {
+            data.Version++;
+
             if (cards != null)
             {
-                data.Cards.AddRange(cards);
+                data.Cards.AddRange(cards.Select(NormalizeCard));
             }
 
             if (relics != null)
             {
-                data.Relics.AddRange(relics);
+                data.Relics.AddRange(relics.Select(NormalizeRelic));
             }
 
             if (potions != null)
             {
-                data.Potions.AddRange(potions);
+                data.Potions.AddRange(potions.Select(NormalizePotion));
             }
 
             data.Gold = ClampGold(data.Gold + gold);
@@ -111,9 +160,11 @@ public static class WarehouseStore
         var store = RitsuLibFramework.GetDataStore(Entry.ModId);
         store.Modify<WarehouseData>(DataKey, data =>
         {
+            data.Version++;
+
             foreach (SerializableCard carriedCard in carried.Cards)
             {
-                int index = data.Cards.FindIndex(c => SerializableCardEquals(c, carriedCard));
+                int index = data.Cards.FindIndex(c => c.Id == carriedCard.Id);
                 if (index >= 0)
                 {
                     data.Cards.RemoveAt(index);
@@ -143,12 +194,36 @@ public static class WarehouseStore
         store.Save(DataKey);
     }
 
-    private static bool SerializableCardEquals(SerializableCard a, SerializableCard b)
+    /// <summary>
+    /// Strips a card down to its base state: no upgrade, no enchantment, no saved props, no deck-floor marker.
+    /// Mutates and returns the same instance (callers hold throwaway serializables). 把卡牌归一为基础态（去升级/附魔/属性）。
+    /// </summary>
+    public static SerializableCard NormalizeCard(SerializableCard card)
     {
-        return a.Id == b.Id
-               && a.CurrentUpgradeLevel == b.CurrentUpgradeLevel
-               && Equals(a.Enchantment?.Id, b.Enchantment?.Id)
-               && a.Enchantment?.Amount == b.Enchantment?.Amount;
+        card.CurrentUpgradeLevel = 0;
+        card.Enchantment = null;
+        card.Props = null;
+        card.FloorAddedToDeck = null;
+        return card;
+    }
+
+    /// <summary>
+    /// Strips a relic down to its base state: no saved props (stack amounts), no deck-floor marker. 把遗物归一为基础态（去属性）。
+    /// </summary>
+    public static SerializableRelic NormalizeRelic(SerializableRelic relic)
+    {
+        relic.Props = null;
+        relic.FloorAddedToDeck = null;
+        return relic;
+    }
+
+    /// <summary>
+    /// Strips a potion's in-run slot index (meaningless in a stash). 清掉药水的局内栏位号（仓库里无意义）。
+    /// </summary>
+    public static SerializablePotion NormalizePotion(SerializablePotion potion)
+    {
+        potion.SlotIndex = 0;
+        return potion;
     }
 
     private static int ClampGold(int gold)

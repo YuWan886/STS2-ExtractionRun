@@ -71,12 +71,31 @@ public static class ExtractionLocalization
     public static string FirstSeedToastText() => Text("EXTRACTION_RUN.toast.firstSeed");
     public static string NeedCardHintText() => Text("EXTRACTION_RUN.hub.needCard");
 
+    public static string SearchPlaceholderText() => Text("EXTRACTION_RUN.search.placeholder");
+    public static string SearchLimitText(int shownCap, int total) => Formatted("EXTRACTION_RUN.search.limit", shownCap, total);
+    public static string SearchNoMatchText(string category) => Formatted("EXTRACTION_RUN.search.emptyTab", category);
+
+    public static string FilterPoolText() => Text("EXTRACTION_RUN.filter.pool");
+    public static string FilterRarityText() => Text("EXTRACTION_RUN.filter.rarity");
+    public static string FilterTypeText() => Text("EXTRACTION_RUN.filter.type");
+    public static string FilterCostText() => Text("EXTRACTION_RUN.filter.cost");
+    public static string FilterAllText() => Text("EXTRACTION_RUN.filter.all");
+    public static string FilterClearText() => Text("EXTRACTION_RUN.filter.clear");
+
+    /// <summary>Localized label for a rarity option (falls back to the enum name). 稀有度选项的本地化标签（回退枚举名）。</summary>
+    public static string FilterRarityLabel(string slug) => DynamicText("EXTRACTION_RUN.filter.rarity." + slug.ToLowerInvariant(), slug);
+
+    /// <summary>Localized label for a card-type option. 卡牌类型选项的本地化标签。</summary>
+    public static string FilterTypeLabel(string slug) => DynamicText("EXTRACTION_RUN.filter.type." + slug.ToLowerInvariant(), slug);
+
+    /// <summary>Localized label for a cost-bucket option. 费用桶选项的本地化标签。</summary>
+    public static string FilterCostLabel(string slug) => DynamicText("EXTRACTION_RUN.filter.cost." + slug.ToLowerInvariant(), slug);
+
     public static string LimitCardsText(int current, int max) => Formatted("EXTRACTION_RUN.limit.cards", current, max);
     public static string LimitRelicsText(int current, int max) => Formatted("EXTRACTION_RUN.limit.relics", current, max);
     public static string LimitPotionsText(int current, int max) => Formatted("EXTRACTION_RUN.limit.potions", current, max);
     public static string GoldWarehouseText(int gold) => Formatted("EXTRACTION_RUN.gold.warehouse", gold);
     public static string GoldCarryText(int gold) => Formatted("EXTRACTION_RUN.gold.carry", gold);
-    public static string CardUpgradeText(int level) => Formatted("EXTRACTION_RUN.card.upgrade", level);
 
     // ----- Settlement screen 结算界面 -----
 
@@ -121,4 +140,15 @@ public static class ExtractionLocalization
     private static string Text(string key) => new LocString(UiTable, key).GetFormattedText();
 
     private static string Formatted(string key, params object[] args) => string.Format(new LocString(UiTable, key).GetRawText(), args);
+
+    /// <summary>
+    /// Localized value for a dynamic (enum-derived) key with a fallback to <paramref name="fallback"/> — used for
+    /// filter option labels whose key names follow an enum slug (<c>EXTRACTION_RUN.filter.rarity.common</c> etc.).
+    /// 动态键（由枚举派生）的本地化取值，未找到时回退 <paramref name="fallback"/>——用于过滤选项标签。
+    /// </summary>
+    private static string DynamicText(string key, string fallback)
+    {
+        LocString? loc = LocString.GetIfExists(UiTable, key);
+        return loc != null ? loc.GetFormattedText() : fallback;
+    }
 }

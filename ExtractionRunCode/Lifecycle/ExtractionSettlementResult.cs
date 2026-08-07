@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using MegaCrit.Sts2.Core.Saves.Runs;
 
 namespace ExtractionRun.Lifecycle;

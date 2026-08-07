@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using Godot;
 using ExtractionRun.Lifecycle;
 
@@ -9,12 +6,34 @@ namespace ExtractionRun.UI;
 /// <summary>
 /// Post-run settlement screen: shows the extraction result after the vanilla game-over summary page. Success lists the
 /// loot deposited into the warehouse (final deck / relics / potions / gold); failure lists the carried loadout that
-/// was lost. Read-only card-form tiles, dark themed like the warehouse hub. 跑局结算界面：成功列出存入仓库的战利品，
-/// 失败列出损失的携带装备；只读卡片形式，深色主题。
+/// was lost. Read-only card-form tiles, dark themed like the warehouse hub. The report sits in a horizontally-centered
+/// capped-width column; each section's items render as rows×columns grids whose column count derives from the column
+/// width (see <see cref="ApplyColumns"/>).
+/// 跑局结算界面：成功列出存入仓库的战利品，失败列出损失的携带装备；只读卡片形式，深色主题。结算内容置于水平居中的
+/// 封顶宽度列，各分区物品以行列网格展示，列数由列宽推导（见 <see cref="ApplyColumns"/>）。
 /// </summary>
 public sealed partial class ExtractionSettlementScreen : CanvasLayer
 {
     private readonly ExtractionSettlementResult _result;
+
+    /// <summary>Item grid gap in px (matches the warehouse hub's 8px). 物品网格间距。</summary>
+    private const int GridGap = 8;
+
+    /// <summary>Content column inner left/right gutter (24 each). 内容列左右内边距。</summary>
+    private const int ColumnInnerMargin = 24;
+
+    /// <summary>Content column max width; wider viewports center it with side gutters. 内容列最大宽度。</summary>
+    private const float MaxColumnWidth = 1600f;
+
+    /// <summary>Side breathing room so the centered column never touches the viewport edges. 两侧留白，避免贴边。</summary>
+    private const float SideMargin = 96f;
+
+    // One strict grid per non-empty section; column counts recompute from the column width on resize. 每个非空分区的网格，列数随列宽重算。
+    private readonly List<GridContainer> _gridSections = new();
+
+    private Panel _root = null!;
+    private MarginContainer _column = null!;
+    private float _columnWidth;
 
     public ExtractionSettlementScreen(ExtractionSettlementResult result)
     {
@@ -29,39 +48,47 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
 
     private void BuildUi()
     {
-        var root = new Panel { Name = "SettlementPanel" };
-        root.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        root.AddThemeStyleboxOverride("panel", ExtractionTheme.BackgroundBox());
-        root.Theme = ExtractionTheme.Instance;
-        AddChild(root);
+        _root = new Panel { Name = "SettlementPanel" };
+        _root.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _root.AddThemeStyleboxOverride("panel", ExtractionTheme.BackgroundBox());
+        _root.Theme = ExtractionTheme.Instance;
+        AddChild(_root);
 
-        // Center the content column horizontally (max ~1400px, mirroring the vanilla game-over summary's gutters).
-        // Vertical stays full-height: the body is a scroll container, so content is top-aligned. The column shrinks on
-        // narrow viewports so it never clips. 内容列水平居中（约 1400px）；垂直撑满、正文滚动，窄屏自动收窄。
-        var center = new CenterContainer();
-        center.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        center.MouseFilter = Control.MouseFilterEnum.Ignore;
-        root.AddChild(center);
-
-        float columnWidth = Math.Min(1400f, GetViewport().GetVisibleRect().Size.X - 96f);
-        var page = new MarginContainer
-        {
-            CustomMinimumSize = new Vector2(columnWidth, 0f),
-            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
-        };
-        page.AddThemeConstantOverride("margin_left", 24);
-        page.AddThemeConstantOverride("margin_right", 24);
-        page.AddThemeConstantOverride("margin_top", 28);
-        page.AddThemeConstantOverride("margin_bottom", 28);
-        center.AddChild(page);
+        // Horizontally-centered capped-width column. It is anchored to the viewport CENTER directly (0.5/0.5), not
+        // centered via container spacers — the viewport IS the whole game screen, so centering on it centers on screen
+        // by construction. Vertical anchors span 0..1 so the column is full height and the body ScrollContainer stays
+        // bounded (a CenterContainer instead would size to the scroll content's huge min-height and vertically center
+        // the header, hiding the details). 水平居中的封顶宽度列：直接以视口中心锚点（0.5）定位，而非容器占位——视口即全屏，
+        // 由此居中即相对全屏居中。垂直锚 0..1 撑满，保证正文滚动有界（CenterContainer 会按滚动内容最小高度撑大并垂直居中）。
+        _columnWidth = CurrentColumnWidth();
+        _column = new MarginContainer();
+        _column.AnchorLeft = 0.5f;
+        _column.AnchorRight = 0.5f;
+        _column.AnchorTop = 0f;
+        _column.AnchorBottom = 1f;
+        _column.OffsetLeft = -_columnWidth / 2f;
+        _column.OffsetRight = _columnWidth / 2f;
+        _column.OffsetTop = 0f;
+        _column.OffsetBottom = 0f;
+        _column.AddThemeConstantOverride("margin_left", ColumnInnerMargin);
+        _column.AddThemeConstantOverride("margin_right", ColumnInnerMargin);
+        _column.AddThemeConstantOverride("margin_top", 28);
+        _column.AddThemeConstantOverride("margin_bottom", 28);
+        _root.AddChild(_column);
 
         var vbox = new VBoxContainer();
         vbox.AddThemeConstantOverride("separation", 12);
-        page.AddChild(vbox);
+        _column.AddChild(vbox);
 
         vbox.AddChild(BuildHeader());
         vbox.AddChild(BuildLede());
         vbox.AddChild(BuildBody());
+
+        // Reapply on window resize (the root is full-rect under the viewport, so its Resized fires when the window
+        // resizes; the initial open-time resize is missed because it fires during AddChild, but the build-time values
+        // are already correct for the current viewport). 窗口缩放时重算（根面板全屏锚定，窗口缩放触发 Resized；首次 AddChild
+        // 时的 resize 在订阅前已错过，但构建时已按当前视口算好，不影响初始显示）。
+        _root.Resized += ApplyColumns;
     }
 
     private Control BuildHeader()
@@ -178,15 +205,23 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
         }
         else
         {
-            var flow = new HFlowContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-            flow.AddThemeConstantOverride("separation", 8);
+            // Strict rows×columns grid: a fixed-column GridContainer (not a flow wrap). Columns are computed from the
+            // content column width deterministically here at build time (see ApplyColumns for the resize path) — the
+            // grid's own width is 0 until containers sort, so it can't drive the column count.
+            // 严格的行列网格：固定列数 GridContainer（非流式换行）。列数在此由内容列宽确定性算好（缩放路径见 ApplyColumns）——
+            // 网格自身宽度在容器排序前为 0，不能作为列数依据。
+            var grid = new GridContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+            grid.AddThemeConstantOverride("h_separation", GridGap);
+            grid.AddThemeConstantOverride("v_separation", GridGap);
+            grid.Columns = ComputeColumns();
             foreach ((string name, string pool, int count, Texture2D? texture) in list)
             {
-                flow.AddChild(ExtractionItemTiles.MakeItemTile(name, pool, count, texture,
+                grid.AddChild(ExtractionItemTiles.MakeItemTile(name, pool, count, texture,
                     ExtractionItemTiles.ItemTileAction.Display, null));
             }
 
-            box.AddChild(flow);
+            box.AddChild(grid);
+            _gridSections.Add(grid);
         }
 
         return box;
@@ -204,6 +239,50 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
         row.AddChild(label);
 
         return row;
+    }
+
+    /// <summary>
+    /// Content column width = min(MaxColumnWidth, viewport − side margin), floored at a usable minimum. The column is
+    /// anchored to the viewport center, so this width is what actually renders on the game screen.
+    /// 内容列宽度 = min(封顶 1600, 视口宽 − 两侧留白 96)，列以视口中心为锚，此宽度即实际渲染宽度。
+    /// </summary>
+    private float CurrentColumnWidth()
+    {
+        float available = GetViewport().GetVisibleRect().Size.X - SideMargin;
+        return Math.Max(320f, Math.Min(MaxColumnWidth, available));
+    }
+
+    /// <summary>
+    /// Column count from the content column width (deterministic, no dependency on the grid's laid-out size):
+    /// grid width = column width − inner gutters, divided by (tile + gap), floored, min 1, no cap. 13 @1080p
+    /// (1600px column), fewer on narrow windows.
+    /// 由内容列宽确定性计算列数（不依赖网格布局尺寸）：网格宽 = 列宽 − 内边距，除以（卡片 + 间距）向下取整、至少 1、无上限。
+    /// 1080p（1600px 列）为 13 列，窄屏更少。
+    /// </summary>
+    private int ComputeColumns()
+    {
+        float gridWidth = _columnWidth - ColumnInnerMargin * 2;
+        return Math.Max(1, (int)(gridWidth / (ExtractionItemTiles.TileWidth + GridGap)));
+    }
+
+    /// <summary>
+    /// Re-applies the centered column width and grid column counts on the root panel's Resized (window resize).
+    /// 在根面板 Resized（窗口缩放）时重算居中列宽与网格列数。
+    /// </summary>
+    private void ApplyColumns()
+    {
+        _columnWidth = CurrentColumnWidth();
+        _column.OffsetLeft = -_columnWidth / 2f;
+        _column.OffsetRight = _columnWidth / 2f;
+
+        int columns = ComputeColumns();
+        foreach (GridContainer grid in _gridSections)
+        {
+            if (grid.Columns != columns)
+            {
+                grid.Columns = columns;
+            }
+        }
     }
 
     private static Control MakeSpacer()

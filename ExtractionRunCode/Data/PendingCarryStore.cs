@@ -34,10 +34,7 @@ public static class PendingCarryStore
         var store = RitsuLibFramework.GetDataStore(Entry.ModId);
         store.Modify<CarryConfig>(DataKey, data =>
         {
-            // data and config may be the SAME live object (the warehouse hub mutates the store's instance in place via
-            // PendingCarryStore.Current). Snapshot the source lists BEFORE clearing, otherwise Clear() wipes the
-            // carry we are about to copy and the run starts empty.
-            // 注意：data 与 config 可能是同一个对象（仓库大厅原地修改 Current）。先快照再清空，否则 Clear 会清掉要复制的数据。
+            
             List<SerializableCard> cards = config.Cards.ToList();
             List<SerializableRelic> relics = config.Relics.ToList();
             List<SerializablePotion> potions = config.Potions.ToList();

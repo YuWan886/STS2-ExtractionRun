@@ -1,5 +1,3 @@
-using System;
-using System.Linq;
 using MegaCrit.Sts2.Core.Context;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Models;
@@ -30,7 +28,7 @@ public static class ExtractionRunEnd
     {
         try
         {
-            // Only extraction runs deposit.
+
             if (evt.Run.Modifiers.All(sm => sm.Id != ModelDb.Modifier<ExtractionModifier>().Id))
             {
                 Entry.Logger.Info("ExtractionRunEnd: run has no extraction modifier; nothing to settle.");
@@ -49,7 +47,6 @@ public static class ExtractionRunEnd
                 return;
             }
 
-            // Extraction succeeds only when the run is won AND the local player survived.
             bool success = evt.IsVictory && me.Creature.IsAlive;
             var result = new ExtractionSettlementResult { Success = success };
 
@@ -80,7 +77,6 @@ public static class ExtractionRunEnd
             }
             else
             {
-                // Death / abandon / "team won but I died": the carried loadout was consumed at run start and is lost.
                 CarryConfig carried = ExtractionRunData.Carry.Get(me);
                 result.Cards.AddRange(carried.Cards);
                 result.Relics.AddRange(carried.Relics);

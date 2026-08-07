@@ -1,4 +1,3 @@
-using System.Linq;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Models;
@@ -6,7 +5,6 @@ using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Saves.Runs;
 using ExtractionRun.Data;
 using ExtractionRun.Lifecycle;
-using ExtractionRun.Modifier;
 
 namespace ExtractionRun.Modifier;
 
@@ -20,17 +18,16 @@ public sealed class ExtractionModifier : ModifierModel
 {
     /// <summary>Clears the default character deck before <see cref="AfterRunCreated"/> (no cards unless carried).</summary>
     public override bool ClearsPlayerDeck => true;
+    protected override string IconPath => "res://ExtractionRun/images/modifiers/extraction.png";
 
     protected override void AfterRunCreated(RunState runState)
     {
-        // A fresh extraction run invalidates any previous run's settlement result.
         ExtractionSettlement.Clear();
 
         foreach (Player player in runState.Players)
         {
             CarryConfig config = ExtractionRunData.Carry.Get(player);
 
-            // Remove the character's default relics and potions (deck is already cleared by ClearsPlayerDeck).
             foreach (RelicModel relic in player.Relics.ToList())
             {
                 player.RemoveRelicInternal(relic, silent: true);
@@ -44,12 +41,8 @@ public sealed class ExtractionModifier : ModifierModel
                 }
             }
 
-            // Gold: carried amount (0 = no starting gold).
             player.Gold = config.Gold;
 
-            // Empty carry: grant the character's starter deck (deck only — no gold/relic/potion). The warehouse hub
-            // blocks empty starts, so only MP clients reach this with 0 cards; without a deck they'd be soft-locked.
-            // 空携带：发初始牌组兜底（只发牌）。大厅会阻止空开跑，只有 MP 客户端会走到这；没有牌组就是软锁。
             if (config.Cards.Count == 0)
             {
                 foreach (CardModel starter in player.Character.StartingDeck)
@@ -61,8 +54,6 @@ public sealed class ExtractionModifier : ModifierModel
 
                 if (player.Deck.Cards.Count == 0)
                 {
-                    // Character has no starter deck (e.g. Deprived) — fall back to a generic Basic pool so the run
-                    // stays playable. 角色没有初始牌组（如 Deprived）时，用通用基础牌兜底。
                     foreach (CardModel basic in ModelDb.AllCards
                                  .Where(c => c.Rarity == CardRarity.Basic)
                                  .GroupBy(c => c.Id)
@@ -79,7 +70,6 @@ public sealed class ExtractionModifier : ModifierModel
                                   $"({player.Deck.Cards.Count} cards).");
             }
 
-            // Cards: restore from their serializable form (upgrades/enchantments/props preserved).
             foreach (SerializableCard sc in config.Cards)
             {
                 if (sc.Id == null || ModelDb.GetByIdOrNull<CardModel>(sc.Id) == null)
@@ -92,7 +82,6 @@ public sealed class ExtractionModifier : ModifierModel
                 player.Deck.AddInternal(card, silent: true);
             }
 
-            // Relics: restore and let FinalizeStartingRelics run AfterObtained for each.
             foreach (SerializableRelic sr in config.Relics)
             {
                 if (sr.Id == null || ModelDb.GetByIdOrNull<RelicModel>(sr.Id) == null)
@@ -105,7 +94,6 @@ public sealed class ExtractionModifier : ModifierModel
                 player.AddRelicInternal(relic, silent: true);
             }
 
-            // Potions: clamp to the player's available potion slots.
             int addedPotions = 0;
             foreach (SerializablePotion sp in config.Potions)
             {
@@ -125,10 +113,6 @@ public sealed class ExtractionModifier : ModifierModel
             }
         }
 
-        // Consume the LOCAL player's carried items from this machine's own warehouse. Each machine only touches its
-        // own profile stash; the carried items are gone for good (dying/abandoning loses them).
-        // NOTE: we resolve the local player via NetService.NetId instead of LocalContext.GetMe, because LocalContext's
-        // NetId is not assigned until RunManager.Launch(), which runs AFTER AfterRunCreated.
         ulong localNetId = RunManager.Instance?.NetService?.NetId ?? 0;
         Player? me = runState.Players.FirstOrDefault(p => p.NetId == localNetId);
         if (me != null)
@@ -142,10 +126,6 @@ public sealed class ExtractionModifier : ModifierModel
                                   $"{myConfig.Gold} gold from the local warehouse.");
             }
 
-            // The pending carry is a gear-up draft that must not outlive the run that consumed it: leaving it in
-            // pending_carry.json would pre-fill the next warehouse visit with items already gone from the stash, and
-            // the next launch would re-inject them for free (item duplication). Wipe it now that the run has started.
-            // 开跑后清空待发配置：否则下次仓库会预填已消耗的物品，再次开跑等于免费重注入（刷物品）。
             PendingCarryStore.Clear();
         }
     }

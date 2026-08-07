@@ -28,7 +28,6 @@ public static class ExtractionSettingsPage
         static s => s.MaxCarryRelics,
         static (s, v) => s.MaxCarryRelics = v);
 
-    /// <summary>The live settings object for the current profile (always exists after Register). 当前设置。</summary>
     public static ExtractionSettings Current =>
         RitsuLibFramework.GetDataStore(Entry.ModId).Get<ExtractionSettings>(DataKey);
 
