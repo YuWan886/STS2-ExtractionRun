@@ -1,0 +1,13 @@
+{
+  "extractionrun.mod_title": "Search-Loot-Extract",
+  "extractionrun.settings.page.title": "Search-Loot-Extract Settings",
+  "extractionrun.settings.section.general.title": "General",
+  "extractionrun.settings.maxCards": "Max carried cards",
+  "extractionrun.settings.maxCards.description": "Maximum number of cards you can carry into a run.",
+  "extractionrun.settings.maxRelics": "Max carried relics",
+  "extractionrun.settings.maxRelics.description": "Maximum number of relics you can carry into a run.",
+  "extractionrun.settings.section.reset.title": "Reset",
+  "extractionrun.settings.reset.label": "Restore Defaults",
+  "extractionrun.settings.reset.button": "Reset",
+  "extractionrun.settings.reset.description": "Restore all Search-Loot-Extract settings to their default values."
+}

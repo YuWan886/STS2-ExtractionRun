@@ -1,0 +1,13 @@
+{
+  "extractionrun.mod_title": "搜打撤",
+  "extractionrun.settings.page.title": "搜打撤设置",
+  "extractionrun.settings.section.general.title": "通用",
+  "extractionrun.settings.maxCards": "最大携带牌数",
+  "extractionrun.settings.maxCards.description": "每局最多可携带的卡牌数量。",
+  "extractionrun.settings.maxRelics": "最大携带遗物数",
+  "extractionrun.settings.maxRelics.description": "每局最多可携带的遗物数量。",
+  "extractionrun.settings.section.reset.title": "重置",
+  "extractionrun.settings.reset.label": "重置默认值",
+  "extractionrun.settings.reset.button": "重置",
+  "extractionrun.settings.reset.description": "将所有搜打撤设置恢复为默认值。"
+}

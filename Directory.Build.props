@@ -1,0 +1,8 @@
+<Project>
+    <PropertyGroup>
+        <NullableChecks>enable</NullableChecks>
+        <PublicizeSts>true</PublicizeSts>
+        <GodotPath>D:/Godot_v4.5.1-stable_mono_win64/Godot_v4.5.1-stable_mono_win64.exe</GodotPath>
+        <SteamLibraryPath>F:/steam/steamapps</SteamLibraryPath>
+    </PropertyGroup>
+</Project>

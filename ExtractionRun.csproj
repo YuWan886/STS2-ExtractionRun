@@ -1,0 +1,90 @@
+<Project Sdk="Godot.NET.Sdk/4.5.1" InitialTargets="CheckDependencyPaths">
+    <Import Project=".\Sts2PathDiscovery.props"/>
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <Version>0.1.0</Version>
+        <LangVersion>13.0</LangVersion>
+        <ImplicitUsings>true</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <AppOutputBase>$(MSBuildProjectDirectory)\</AppOutputBase>
+        <PathMap>$(AppOutputBase)=.\</PathMap>
+        <GodotDisabledSourceGenerators>GodotPluginsInitializer</GodotDisabledSourceGenerators>
+        <!--
+          The extraction modifier (ExtractionModifier) is not registered through RitsuLib's content registry, so its
+          loc id is the base-game bare class-name slug EXTRACTION_MODIFIER (ModifierModel.Title reads
+          'modifiers/EXTRACTION_MODIFIER.title'). modifiers.json uses that form. STS001/STS003 from the base-game
+          Alchyr.Sts2.ModAnalyzers can still misfire on content registered by RitsuLib at runtime (which RitsuLib
+          renames to MODID_CATEGORY_TYPENAME), so keep them suppressed.
+        -->
+        <NoWarn>$(NoWarn);MSB3270;STS001;STS003</NoWarn>
+    </PropertyGroup>
+
+    <ItemGroup Condition="Exists('$(Sts2DataDir)')">
+        <Reference Include="0Harmony">
+            <HintPath>$(Sts2DataDir)/0Harmony.dll</HintPath>
+            <Private>false</Private>
+        </Reference>
+        <Reference Include="sts2">
+            <HintPath>$(Sts2DataDir)/sts2.dll</HintPath>
+            <Private>false</Private>
+        </Reference>
+        <Reference Include="Steamworks.NET">
+            <HintPath>$(Sts2DataDir)/Steamworks.NET.dll</HintPath>
+            <Private>false</Private>
+        </Reference>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Publicize Include="sts2" IncludeVirtualMembers="false" IncludeCompilerGeneratedMembers="false"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Krafs.Publicizer" Version="2.3.0" PrivateAssets="All"/>
+        <PackageReference Include="Alchyr.Sts2.ModAnalyzers" Version="*"/>
+        <PackageReference Include="STS2.RitsuLib"  Version="*"/>
+        <AdditionalFiles Include="ExtractionRun/localization/**/*.json"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Compile Remove="ExtractionRun/**"/>
+        <EmbeddedResource Remove="ExtractionRun/**"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Condition="Exists('Directory.Build.props')" Include="Directory.Build.props"/>
+        <None Include="ExtractionRun.json"/>
+        <None Include="project.godot"/>
+        <None Include="ExtractionRun/**"/>
+    </ItemGroup>
+
+    <Target Name="CheckDependencyPaths">
+        <Error
+            Text=" Slay the Spire 2 data not found at path '$(Sts2DataDir)'"
+            Condition="'$(Sts2DataDir)' == '' or !Exists('$(Sts2DataDir)')" />
+    </Target>
+
+    <Target Name="CopyToModsFolderOnBuild" AfterTargets="PostBuildEvent">
+        <Message Text="Copying .dll .pdb and .json to mods folder." Importance="high" />
+        <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModsPath)$(MSBuildProjectName)/" />
+        <Copy SourceFiles="$(AssemblyName).json" DestinationFolder="$(ModsPath)$(MSBuildProjectName)/" />
+        <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(ModsPath)$(MSBuildProjectName)/" />
+    </Target>
+
+    <!--
+      The mod ships a .pck containing localization JSON + mod_image.png. Godot must import images to .ctex before
+      they load at runtime via res://. Use Godot's own headless export. Run `dotnet publish` to produce the .pck.
+      Requires GodotPath (set in Directory.Build.props) and export_presets.cfg (preset "BasicExport").
+    -->
+    <Target Name="NeedGodotForPublish" BeforeTargets="Publish">
+        <Error Text="Godot path must be set up before publishing; Godot not found at path '$(GodotPath)'. Check Directory.Build.props file."
+               Condition="'$(GodotPath)' == '' or !Exists('$(GodotPath)')" />
+    </Target>
+
+    <Target Name="GodotPublish" AfterTargets="Publish" Condition="'$(GodotPath)' != '' and Exists('$(GodotPath)') and '$(IsInnerGodotExport)' != 'true'">
+        <Message Text="Exporting Godot .pck to mods folder" Importance="high" />
+        <Exec Command="&quot;$(GodotPath)&quot; --headless --export-pack &quot;BasicExport&quot; &quot;$(ModsPath)$(MSBuildProjectName)/$(MSBuildProjectName).pck&quot;"
+              EnvironmentVariables="IsInnerGodotExport=true;MSBUILDDISABLENODEREUSE=1"
+              IgnoreExitCode="true" />
+    </Target>
+</Project>
