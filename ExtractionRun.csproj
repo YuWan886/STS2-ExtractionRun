@@ -7,6 +7,11 @@
         <ImplicitUsings>true</ImplicitUsings>
         <Nullable>enable</Nullable>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <!--
+          Content is packaged as a multi-version variant (lib/<game>/ExtractionRun.Content.dll)
+          behind the small ExtractionRun loader assembly. Keep the public namespace as ExtractionRun.
+        -->
+        <AssemblyName>ExtractionRun.Content</AssemblyName>
         <AppOutputBase>$(MSBuildProjectDirectory)\</AppOutputBase>
         <PathMap>$(AppOutputBase)=.\</PathMap>
         <GodotDisabledSourceGenerators>GodotPluginsInitializer</GodotDisabledSourceGenerators>
@@ -29,10 +34,14 @@
             <HintPath>$(Sts2DataDir)/sts2.dll</HintPath>
             <Private>false</Private>
         </Reference>
-        <Reference Include="Steamworks.NET">
-            <HintPath>$(Sts2DataDir)/Steamworks.NET.dll</HintPath>
-            <Private>false</Private>
-        </Reference>
+    </ItemGroup>
+
+    <!-- Build the game-facing ExtractionRun.dll loader alongside the content. We do not
+         reference its types (ReferenceOutputAssembly=false); the loader drives content
+         via reflection + the ModTypes bridge. -->
+    <ItemGroup>
+        <ProjectReference Include="ExtractionRunCode\Loader\ExtractionRunCode.Loader.csproj"
+                          ReferenceOutputAssembly="false" />
     </ItemGroup>
 
     <ItemGroup>
@@ -52,6 +61,13 @@
     </ItemGroup>
 
     <ItemGroup>
+        <!-- The loader is its own project (ExtractionRun.dll); keep it out of the content assembly. -->
+        <Compile Remove="ExtractionRunCode/Loader/**"/>
+        <EmbeddedResource Remove="ExtractionRunCode/Loader/**"/>
+        <None Remove="ExtractionRunCode/Loader/**"/>
+    </ItemGroup>
+
+    <ItemGroup>
         <None Condition="Exists('Directory.Build.props')" Include="Directory.Build.props"/>
         <None Include="ExtractionRun.json"/>
         <None Include="project.godot"/>
@@ -64,11 +80,16 @@
             Condition="'$(Sts2DataDir)' == '' or !Exists('$(Sts2DataDir)')" />
     </Target>
 
+    <!--
+      Deploys one content variant into <Mods>/ExtractionRun/lib/<version>/ plus the loader at the mod
+      root. Empty $(VariantTarget) (plain `dotnet build`, the dev loop) auto-detects the installed game
+      version from release_info.json; build-variants.ps1 passes an explicit VariantTarget per snapshot
+      to assemble the full multi-version bundle. The .pck is version-independent and produced by `dotnet publish`.
+    -->
     <Target Name="CopyToModsFolderOnBuild" AfterTargets="PostBuildEvent">
-        <Message Text="Copying .dll .pdb and .json to mods folder." Importance="high" />
-        <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModsPath)$(MSBuildProjectName)/" />
-        <Copy SourceFiles="$(AssemblyName).json" DestinationFolder="$(ModsPath)$(MSBuildProjectName)/" />
-        <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(ModsPath)$(MSBuildProjectName)/" />
+        <Message Text="Deploying ExtractionRun content variant + loader to mods folder." Importance="high" />
+        <Copy SourceFiles="ExtractionRun.json" DestinationFolder="$(ModsPath)$(MSBuildProjectName)/" />
+        <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)/tools/deploy-mod.ps1&quot; -ContentDll &quot;$(TargetPath)&quot; -LoaderDll &quot;$(MSBuildProjectDirectory)/ExtractionRunCode/Loader/bin/$(Configuration)/net9.0/ExtractionRun.dll&quot; -ModRoot &quot;$(ModsPath)$(MSBuildProjectName)&quot; -Sts2DataDir &quot;$(Sts2DataDir)&quot; -VariantTarget &quot;$(VariantTarget)&quot;" />
     </Target>
 
     <!--

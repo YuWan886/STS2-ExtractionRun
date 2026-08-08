@@ -38,3 +38,17 @@ On first use, the warehouse is seeded with all Basic and Common cards, all Start
 - **Reset to defaults**: restores every setting.
 
 Settings are stored at global scope, shared across all saves.
+
+## Debug Console Commands
+
+The in-game developer console provides these Search-Loot-Extract commands (local-only, independent of the settings page):
+
+```
+extraction reset                                         # reset the warehouse (confirmation dialog)
+extraction add <card|relic|potion|gold> <id|amount> [count]
+extraction remove <card|relic|potion|gold> <id|amount> [count]
+```
+
+- **`extraction reset`**: wipes the warehouse and re-grants the starting items. Shows a confirmation dialog first; **unavailable while a run is in progress or a character-select lobby is open**.
+- **`extraction add`**: adds items to the warehouse. `card` / `relic` / `potion` are addressed by model ID (SCREAMING_SNAKE, e.g. `STRIKE`, with Tab completion); `gold` takes an amount directly. `[count]` defaults to 1 and is capped at 999. Adds go through the normal deposit path, so items are normalized to base state.
+- **`extraction remove`**: removes items or gold from the warehouse. Same addressing; `[count]` defaults to 1 and is capped at 999. **Unavailable while a run is in progress or a character-select lobby is open**; removes also strip the matching items from any pending carry, preventing free-item dupes.

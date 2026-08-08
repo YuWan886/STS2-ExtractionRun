@@ -11,6 +11,7 @@ local.props
 *.import
 *.tmp
 *.log
+.build-variants-tmp/
 
 AGENTS.md
 CLAUDE.md

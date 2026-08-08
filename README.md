@@ -38,3 +38,17 @@
 - **重置默认值**：一键恢复所有设置。
 
 设置保存于全局范围，所有存档共享。
+
+## 调试指令
+
+游戏内置开发控制台提供以下「搜打撤」指令（仅本机生效，不受设置页影响）：
+
+```
+extraction reset                                           # 重置仓库（带确认框）
+extraction add <card|relic|potion|gold> <id|数量> [count]   # 向仓库添加
+extraction remove <card|relic|potion|gold> <id|数量> [count] # 从仓库移除
+```
+
+- **`extraction reset`**：清空仓库并重新发放初始物品。会先弹出确认框；**跑局进行中或角色选择大厅中不可用**。
+- **`extraction add`**：向仓库添加物品。`card` / `relic` / `potion` 以模型 ID 指定（大写下划线形式，如 `STRIKE`，支持 Tab 补全）；`gold` 直接填数量。`[count]` 省略时默认为 1，上限 999。添加走常规入库流程，物品会还原为基础状态。
+- **`extraction remove`**：从仓库移除物品或金币。寻址方式同上，`[count]` 省略时默认为 1，上限 999。**跑局进行中或角色选择大厅中不可用**；移除后会同步清理携带中对应的物品，避免凭空复制。
