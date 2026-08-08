@@ -29,13 +29,32 @@ public static class PendingCarryStore
     /// <summary>The pending carry config for the current profile. 当前存档的待发携带配置。</summary>
     public static CarryConfig Current => RitsuLibFramework.GetDataStore(Entry.ModId).Get<CarryConfig>(DataKey);
 
+    /// <summary>
+    /// Returns a detached copy of the current pending carry for in-memory editing. The hub mutates its own copy and
+    /// only writes it back via <see cref="Set"/> on confirm/start — so closing or backing out never leaks edits into
+    /// the store's live instance (which would otherwise stage an unconfirmed loadout on the next join). 返回当前待发携带
+    /// 的独立副本供界面编辑；界面只在自己的副本上改动，确认/开跑时才 Set 写回，返回/关闭不会把未确认的改动泄漏进活实例。
+    /// </summary>
+    public static CarryConfig Snapshot()
+    {
+        CarryConfig current = Current;
+        return new CarryConfig
+        {
+            Cards = current.Cards.ToList(),
+            Relics = current.Relics.ToList(),
+            Potions = current.Potions.ToList(),
+            Gold = current.Gold,
+        };
+    }
+
     /// <summary>Overwrites and persists the pending carry config. 覆盖并持久化待发携带配置。</summary>
     public static void Set(CarryConfig config)
     {
         var store = RitsuLibFramework.GetDataStore(Entry.ModId);
         store.Modify<CarryConfig>(DataKey, data =>
         {
-            
+            // Snapshot the source lists before clearing so Set(config) stays correct even if config aliases data.
+            // 先快照源列表再清空，保证 config 与 data 为同一实例时也能正确写回。
             List<SerializableCard> cards = config.Cards.ToList();
             List<SerializableRelic> relics = config.Relics.ToList();
             List<SerializablePotion> potions = config.Potions.ToList();

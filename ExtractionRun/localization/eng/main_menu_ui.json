@@ -13,6 +13,7 @@
   "EXTRACTION_RUN.carry.gold": "Carried gold",
   "EXTRACTION_RUN.button.start": "Start Search-Loot-Extract run",
   "EXTRACTION_RUN.button.back": "Back",
+  "EXTRACTION_RUN.button.confirmCarry": "Confirm loadout and join lobby",
   "EXTRACTION_RUN.limit.cards": "Deck {0}/{1}",
   "EXTRACTION_RUN.limit.relics": "Relics {0}/{1}",
   "EXTRACTION_RUN.limit.potions": "Potions {0}/{1}",

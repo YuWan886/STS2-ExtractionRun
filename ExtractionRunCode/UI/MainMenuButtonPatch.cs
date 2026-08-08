@@ -28,7 +28,7 @@ public static class MainMenuButtonPatch
     {
         private static void Postfix(NSingleplayerSubmenu __instance)
         {
-            AddButton(__instance, __instance._customButton, isMultiplayerHost: false, loadingOverlay: null);
+            AddButton(__instance, __instance._customButton, WarehouseHubScreen.HubMode.Singleplayer, loadingOverlay: null);
         }
     }
 
@@ -37,11 +37,11 @@ public static class MainMenuButtonPatch
     {
         private static void Postfix(NMultiplayerHostSubmenu __instance)
         {
-            AddButton(__instance, __instance._customButton, isMultiplayerHost: true, __instance._loadingOverlay);
+            AddButton(__instance, __instance._customButton, WarehouseHubScreen.HubMode.MultiplayerHost, __instance._loadingOverlay);
         }
     }
 
-    private static void AddButton(NSubmenu submenu, NSubmenuButton template, bool isMultiplayerHost, Control? loadingOverlay)
+    private static void AddButton(NSubmenu submenu, NSubmenuButton template, WarehouseHubScreen.HubMode mode, Control? loadingOverlay)
     {
         if (template == null)
         {
@@ -53,7 +53,7 @@ public static class MainMenuButtonPatch
         var button = (NSubmenuButton)template.Duplicate();
         button.Name = ButtonName;
         button.Connect(NClickableControl.SignalName.Released,
-            Callable.From<NButton>(_ => OpenWarehouseHub(submenu, loadingOverlay, isMultiplayerHost)));
+            Callable.From<NButton>(_ => OpenWarehouseHub(submenu, loadingOverlay, mode)));
 
         Control bgPanel = button.GetNode<Control>("BgPanel");
         if (bgPanel.Material != null)
@@ -112,7 +112,7 @@ public static class MainMenuButtonPatch
         }
     }
 
-    private static void OpenWarehouseHub(NSubmenu submenu, Control? loadingOverlay, bool isMultiplayerHost)
+    private static void OpenWarehouseHub(NSubmenu submenu, Control? loadingOverlay, WarehouseHubScreen.HubMode mode)
     {
         NGame? game = NGame.Instance;
         if (game == null)
@@ -120,8 +120,8 @@ public static class MainMenuButtonPatch
             return;
         }
 
-        var hub = new WarehouseHubScreen(submenu._stack, loadingOverlay, isMultiplayerHost);
+        var hub = new WarehouseHubScreen(submenu._stack, loadingOverlay, mode);
         game.AddChild(hub);
-        Entry.Logger.Info($"MainMenuButtonPatch: opened warehouse hub (multiplayerHost={isMultiplayerHost}).");
+        Entry.Logger.Info($"MainMenuButtonPatch: opened warehouse hub (mode={mode}).");
     }
 }

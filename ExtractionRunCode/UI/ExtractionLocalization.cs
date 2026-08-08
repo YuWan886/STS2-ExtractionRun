@@ -65,6 +65,7 @@ public static class ExtractionLocalization
     public static string CarryGoldText() => Text("EXTRACTION_RUN.carry.gold");
     public static string ButtonStartText() => Text("EXTRACTION_RUN.button.start");
     public static string ButtonBackText() => Text("EXTRACTION_RUN.button.back");
+    public static string ButtonConfirmText() => Text("EXTRACTION_RUN.button.confirmCarry");
     public static string EmptyWarehouseText() => Text("EXTRACTION_RUN.empty.warehouse");
     public static string EmptyCarryText() => Text("EXTRACTION_RUN.empty.carry");
     public static string DepositSuccessText() => Text("EXTRACTION_RUN.toast.deposit");

@@ -13,6 +13,7 @@
   "EXTRACTION_RUN.carry.gold": "携带金币",
   "EXTRACTION_RUN.button.start": "开始搜打撤",
   "EXTRACTION_RUN.button.back": "返回",
+  "EXTRACTION_RUN.button.confirmCarry": "确认携带并进入大厅",
   "EXTRACTION_RUN.limit.cards": "携带牌组 {0}/{1}",
   "EXTRACTION_RUN.limit.relics": "携带遗物 {0}/{1}",
   "EXTRACTION_RUN.limit.potions": "携带药水 {0}/{1}",

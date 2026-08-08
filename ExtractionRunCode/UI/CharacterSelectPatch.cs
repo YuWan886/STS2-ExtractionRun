@@ -1,6 +1,7 @@
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Multiplayer.Game.Lobby;
+using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect;
 using ExtractionRun.Lifecycle;
 using ExtractionRun.Networking;
@@ -75,9 +76,29 @@ public static class CharacterSelectPatch
             ExtractionRunContext.IsExtractionLaunch = false;
             Entry.Logger.Info("CharacterSelectPatch: extraction modifier applied to lobby.");
         }
+        else if (!isHost && ExtractionCarrySync.HasExtractionModifier(lobby.Modifiers))
+        {
+            // Client joined an extraction room: force the warehouse hub so they configure a carry before the lobby.
+            // The lobby already carries the host's modifier (join response → InitializeFromMessage), so detection is
+            // synchronous here. 客机加入搜打撤房间：强制打开仓库界面，配置完成后才能进入大厅。
+            OpenClientWarehouseHub(screen, lobby);
+        }
         else
         {
             Entry.Logger.Debug("CharacterSelectPatch: character-select opened without an extraction launch.");
         }
+    }
+
+    private static void OpenClientWarehouseHub(NCharacterSelectScreen screen, StartRunLobby lobby)
+    {
+        NGame? game = NGame.Instance;
+        if (game == null)
+        {
+            return;
+        }
+
+        var hub = new WarehouseHubScreen(screen._stack, null, WarehouseHubScreen.HubMode.MultiplayerClient, lobby);
+        game.AddChild(hub);
+        Entry.Logger.Info("CharacterSelectPatch: joined an extraction room — showing client warehouse hub.");
     }
 }

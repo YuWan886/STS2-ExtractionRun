@@ -1,5 +1,6 @@
 using Godot;
 using MegaCrit.Sts2.Core.Helpers;
+using MegaCrit.Sts2.Core.Multiplayer.Game.Lobby;
 using MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Runs;
@@ -22,6 +23,21 @@ namespace ExtractionRun.UI;
 /// </summary>
 public sealed partial class WarehouseHubScreen : CanvasLayer
 {
+    /// <summary>How the hub was opened — decides the footer action and whether it launches a run or configures a
+    /// client's carry inside an already-joined lobby. 打开仓库的方式：决定底部按钮动作与启动/配置语义。</summary>
+    public enum HubMode
+    {
+        /// <summary>Main-menu singleplayer launch. 主菜单单机开跑。</summary>
+        Singleplayer,
+
+        /// <summary>Main-menu multiplayer-host launch. 主菜单联机主机开跑。</summary>
+        MultiplayerHost,
+
+        /// <summary>Forced modal shown to a client who joined an extraction room: confirm stages + re-stages the carry
+        /// into the lobby, back leaves the room. 客机加入搜打撤房间时的强制配置模态：确认暂存/重暂存携带，返回退出房间。</summary>
+        MultiplayerClient,
+    }
+
     private const int GoldStep = 50;
 
     /// <summary>
@@ -49,7 +65,8 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
 
     private readonly NSubmenuStack _stack;
     private readonly Control? _loadingOverlay;
-    private readonly bool _isMultiplayerHost;
+    private readonly HubMode _mode;
+    private readonly StartRunLobby? _lobby;
     private readonly WarehouseData _warehouse;
     private readonly CarryConfig _carry;
     private int _carryGold;
@@ -91,19 +108,21 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     private Button _startButton = null!;
     private Label _startHintLabel = null!;
 
-    public WarehouseHubScreen(NSubmenuStack stack, Control? loadingOverlay, bool isMultiplayerHost)
+    public WarehouseHubScreen(NSubmenuStack stack, Control? loadingOverlay, HubMode mode, StartRunLobby? lobby = null)
     {
         _stack = stack;
         _loadingOverlay = loadingOverlay;
-        _isMultiplayerHost = isMultiplayerHost;
+        _mode = mode;
+        _lobby = lobby;
         Layer = 100;
 
-        // Seed on first open (idempotent), run the one-shot legacy normalization, then load the live warehouse +
-        // pending carry. 首次种子、一次性旧档归一、加载实时仓库与待发携带。
+        // Seed on first open (idempotent), run the one-shot legacy normalization, then load the live warehouse and a
+        // detached copy of the pending carry — only written back on confirm/start, so closing never leaks edits.
+        // 首次种子、一次性旧档归一、加载实时仓库与待发携带的独立副本（仅在确认/开跑时写回）。
         WarehouseStore.EnsureSeeded();
         WarehouseStore.EnsureNormalized();
         _warehouse = WarehouseStore.Current;
-        _carry = PendingCarryStore.Current;
+        _carry = PendingCarryStore.Snapshot();
         _carryGold = _carry.Gold;
 
         // A pending carry saved before the base-only change may still hold upgraded/enchanted items. Normalize it in
@@ -148,6 +167,19 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         }
 
         base._ExitTree();
+    }
+
+    public override void _Input(InputEvent inputEvent)
+    {
+        // ESC mirrors 「返回」. The raw key must be consumed in the _input phase — otherwise it reaches the unhandled
+        // phase, where NHotkeyManager fires the vanilla main-menu back button's ui_cancel binding underneath the hub.
+        // ESC 与「返回」等价：必须在 _input 阶段吞掉原始按键，否则其进入未处理阶段，NHotkeyManager 会在仓库大厅底下触发
+        // 原版主菜单返回按钮的 ui_cancel 绑定。
+        if (inputEvent is InputEventKey { Pressed: true, Keycode: Key.Escape } key && !key.IsEcho())
+        {
+            OnBack();
+            GetViewport().SetInputAsHandled();
+        }
     }
 
     public override void _Process(double delta)
@@ -224,7 +256,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
 
         var back = MakeButton(ExtractionLocalization.ButtonBackText(), ExtractionTheme.ButtonSecondary);
         back.CustomMinimumSize = new Vector2(0f, 44f);
-        back.Pressed += CloseHub;
+        back.Pressed += OnBack;
         header.AddChild(back);
 
         return header;
@@ -272,7 +304,6 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
 
     private Button MakeTabButton(string text, ButtonGroup group, Tab tab)
     {
-        // Equal thirds: each tab expands to fill the bar width. 三等分：每个 Tab 撑满整行。
         var button = new Button
         {
             Text = text,
@@ -567,9 +598,21 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         row.AddThemeConstantOverride("separation", 16);
         row.Alignment = BoxContainer.AlignmentMode.Center;
 
-        var start = MakeButton(ExtractionLocalization.ButtonStartText(), ExtractionTheme.ButtonPrimary);
+        // Client modal: the primary action confirms the carry into the lobby instead of launching a run.
+        // 客户端模态：主按钮为「确认携带」而非发起跑局。
+        bool isClient = _mode == HubMode.MultiplayerClient;
+        var start = MakeButton(isClient ? ExtractionLocalization.ButtonConfirmText() : ExtractionLocalization.ButtonStartText(),
+            ExtractionTheme.ButtonPrimary);
         start.CustomMinimumSize = new Vector2(320f, 54f);
-        start.Pressed += StartRun;
+        if (isClient)
+        {
+            start.Pressed += ConfirmCarryForClient;
+        }
+        else
+        {
+            start.Pressed += StartRun;
+        }
+
         _startButton = start;
         row.AddChild(start);
 
@@ -622,8 +665,10 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         _carryRelicsLabel.Text = ExtractionLocalization.LimitRelicsText(_carry.Relics.Count, maxRelics);
         _carryPotionsLabel.Text = ExtractionLocalization.LimitPotionsText(_carry.Potions.Count, 3);
 
-        // Empty carry cannot start: ClearsPlayerDeck would give a dead 0-card deck.
-        bool canStart = _carry.Cards.Count > 0;
+        // Empty carry cannot start: ClearsPlayerDeck would give a dead 0-card deck — unless carrying any card is
+        // impossible (no cards to carry / MaxCarryCards ≤ 0), in which case the run's starter-deck fallback keeps it
+        // playable. 空携带不能开跑（ClearsPlayerDeck 会给一个 0 牌死局）——除非已不可能带任何卡，此时初始牌组兜底仍可玩。
+        bool canStart = CanProceed();
         _startButton.Disabled = !canStart;
         _startHintLabel.Visible = !canStart;
 
@@ -1075,8 +1120,8 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
 
     private void StartRun()
     {
-        // Defense-in-depth: the button is disabled when the carry is empty, but never launch a 0-card run.
-        if (_carry.Cards.Count == 0)
+        // Defense-in-depth: the button is disabled when CanProceed is false, but never launch a 0-card run.
+        if (!CanProceed())
         {
             Entry.Logger.Info("WarehouseHub: blocked empty-carry start (carry at least one card).");
             return;
@@ -1095,7 +1140,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
 
         // Launch the run through the existing character-select flow; CharacterSelectPatch applies the modifier and
         // stages the pending carry into the lobby.
-        if (_isMultiplayerHost)
+        if (_mode == HubMode.MultiplayerHost)
         {
             TaskHelper.RunSafely(NMultiplayerHostSubmenu.StartHostAsync(GameMode.Standard, _loadingOverlay!, _stack));
         }
@@ -1106,6 +1151,65 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
             _stack.Push(characterSelect);
         }
     }
+
+    /// <summary>Client-modal confirm: persist the carry draft, then re-stage it into the lobby — the init postfix already
+    /// staged the pre-edit pending value, and this overwrites it via <c>SyncLobbyOnChange</c> — before revealing the
+    /// lobby. No <c>IsExtractionLaunch</c>: the host forwards the modifier, not the client. 客户端模态确认：持久化草稿、
+    /// 重暂存进大厅（init postfix 已暂存旧值，此处覆盖并同步），然后露出大厅。不设 IsExtractionLaunch（修正项由主机转发）。</summary>
+    private void ConfirmCarryForClient()
+    {
+        if (!CanProceed())
+        {
+            Entry.Logger.Info("WarehouseHub: blocked empty client carry (carry at least one card).");
+            return;
+        }
+
+        _carry.Gold = _carryGold;
+        PendingCarryStore.Set(_carry);
+        if (_lobby is StartRunLobby lobby)
+        {
+            ExtractionRunData.Carry.Lobby.Set(lobby, lobby.NetService.NetId, _carry);
+        }
+
+        Entry.Logger.Info($"WarehouseHub: client confirmed carry {_carry.Cards.Count} cards, " +
+                          $"{_carry.Relics.Count} relics, {_carry.Potions.Count} potions, {_carry.Gold} gold.");
+        CloseHub();
+    }
+
+    /// <summary>The back flow shared by the 「返回」 button and ESC. Client modal: leave the room by popping the
+    /// character-select screen, whose <c>OnSubmenuClosed</c> disconnects the lobby session; otherwise just close the hub
+    /// (no unconfirmed draft is persisted in either case). 「返回」按钮与 ESC 共用的返回流程：客户端模态弹出角色选择界面退出
+    /// 房间（其 OnSubmenuClosed 断开大厅会话）；其余情况仅关闭大厅。两种情况下都不持久化未确认的草稿。</summary>
+    private void OnBack()
+    {
+        if (_mode == HubMode.MultiplayerClient)
+        {
+            LeaveRoomAndClose();
+        }
+        else
+        {
+            CloseHub();
+        }
+    }
+
+    /// <summary>Client-modal back: leave the room by popping the character-select screen, whose <c>OnSubmenuClosed</c>
+    /// disconnects the lobby session. Does not persist the unconfirmed draft. 客户端模态「返回」：弹出角色选择界面退出房间
+    /// （其 OnSubmenuClosed 断开大厅会话），不持久化未确认的草稿。</summary>
+    private void LeaveRoomAndClose()
+    {
+        if (_stack.Peek() is NCharacterSelectScreen)
+        {
+            _stack.Pop();
+        }
+
+        CloseHub();
+    }
+
+    /// <summary>True when the hub may proceed: a non-empty carry, or an empty carry when carrying any card is impossible
+    /// (the run's starter-deck fallback keeps it playable). 是否可继续：携带非空；或携带为空但已不可能带任何卡（初始牌组兜底可玩）。</summary>
+    private bool CanProceed() => _carry.Cards.Count > 0 || !CanCarryAnyCards;
+
+    private bool CanCarryAnyCards => ExtractionSettingsPage.Current.MaxCarryCards > 0 && _warehouse.Cards.Count > 0;
 
     private void CloseHub()
     {

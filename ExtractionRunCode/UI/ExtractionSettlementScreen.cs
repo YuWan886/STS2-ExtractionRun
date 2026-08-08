@@ -46,6 +46,15 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
         BuildUi();
     }
 
+    public override void _Input(InputEvent inputEvent)
+    {
+        if (inputEvent is InputEventKey { Pressed: true, Keycode: Key.Escape } key && !key.IsEcho())
+        {
+            Close();
+            GetViewport().SetInputAsHandled();
+        }
+    }
+
     private void BuildUi()
     {
         _root = new Panel { Name = "SettlementPanel" };
@@ -54,12 +63,6 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
         _root.Theme = ExtractionTheme.Instance;
         AddChild(_root);
 
-        // Horizontally-centered capped-width column. It is anchored to the viewport CENTER directly (0.5/0.5), not
-        // centered via container spacers — the viewport IS the whole game screen, so centering on it centers on screen
-        // by construction. Vertical anchors span 0..1 so the column is full height and the body ScrollContainer stays
-        // bounded (a CenterContainer instead would size to the scroll content's huge min-height and vertically center
-        // the header, hiding the details). 水平居中的封顶宽度列：直接以视口中心锚点（0.5）定位，而非容器占位——视口即全屏，
-        // 由此居中即相对全屏居中。垂直锚 0..1 撑满，保证正文滚动有界（CenterContainer 会按滚动内容最小高度撑大并垂直居中）。
         _columnWidth = CurrentColumnWidth();
         _column = new MarginContainer();
         _column.AnchorLeft = 0.5f;
@@ -84,10 +87,6 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
         vbox.AddChild(BuildLede());
         vbox.AddChild(BuildBody());
 
-        // Reapply on window resize (the root is full-rect under the viewport, so its Resized fires when the window
-        // resizes; the initial open-time resize is missed because it fires during AddChild, but the build-time values
-        // are already correct for the current viewport). 窗口缩放时重算（根面板全屏锚定，窗口缩放触发 Resized；首次 AddChild
-        // 时的 resize 在订阅前已错过，但构建时已按当前视口算好，不影响初始显示）。
         _root.Resized += ApplyColumns;
     }
 
@@ -205,11 +204,6 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
         }
         else
         {
-            // Strict rows×columns grid: a fixed-column GridContainer (not a flow wrap). Columns are computed from the
-            // content column width deterministically here at build time (see ApplyColumns for the resize path) — the
-            // grid's own width is 0 until containers sort, so it can't drive the column count.
-            // 严格的行列网格：固定列数 GridContainer（非流式换行）。列数在此由内容列宽确定性算好（缩放路径见 ApplyColumns）——
-            // 网格自身宽度在容器排序前为 0，不能作为列数依据。
             var grid = new GridContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
             grid.AddThemeConstantOverride("h_separation", GridGap);
             grid.AddThemeConstantOverride("v_separation", GridGap);
