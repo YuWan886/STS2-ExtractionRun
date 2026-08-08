@@ -1,3 +1,4 @@
+using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Saves.Runs;
 using STS2RitsuLib;
 using STS2RitsuLib.Data;
@@ -58,5 +59,64 @@ public static class PendingCarryStore
     public static void Clear()
     {
         Set(new CarryConfig());
+    }
+
+    /// <summary>
+    /// Clamps the carry so it never references more of an item than the warehouse holds, and clamps carried gold to the
+    /// warehouse balance. Called after warehouse-shrinking console commands (reset / remove): without it, a carried item
+    /// that no longer exists (or is no longer sufficiently stocked) in the warehouse would be injected at run start
+    /// while <see cref="WarehouseStore.ConsumeCarried"/> skips the missing copies — a free-item dupe.
+    /// 把携带收敛到不超过仓库存量：删仓/重置后调用；否则携带中已不在仓库（或超出存量）的物品会在开跑时被全部注入、
+    /// 消耗却只跳过缺失——白嫖。
+    /// </summary>
+    public static void RevalidateAgainst(WarehouseData warehouse)
+    {
+        var store = RitsuLibFramework.GetDataStore(Entry.ModId);
+        store.Modify<CarryConfig>(DataKey, data =>
+        {
+            data.Cards = ClampCarry(data.Cards, c => c.Id, CountsBy(warehouse.Cards, c => c.Id));
+            data.Relics = ClampCarry(data.Relics, r => r.Id, CountsBy(warehouse.Relics, r => r.Id));
+            data.Potions = ClampCarry(data.Potions, p => p.Id, CountsBy(warehouse.Potions, p => p.Id));
+            data.Gold = Math.Min(Math.Max(0, data.Gold), Math.Max(0, warehouse.Gold));
+        });
+        store.Save(DataKey);
+    }
+
+    private static Dictionary<ModelId, int> CountsBy<T>(IEnumerable<T> items, Func<T, ModelId?> idSelector) where T : class
+    {
+        var counts = new Dictionary<ModelId, int>();
+        foreach (T item in items)
+        {
+            if (idSelector(item) is ModelId id)
+            {
+                counts[id] = counts.GetValueOrDefault(id) + 1;
+            }
+        }
+
+        return counts;
+    }
+
+    /// <summary>Keeps the first <c>stock</c> copies of each id (null-id entries are dropped as corrupt). 每 id 只保留 stock 份。</summary>
+    private static List<T> ClampCarry<T>(IEnumerable<T> items, Func<T, ModelId?> idSelector, Dictionary<ModelId, int> stock)
+        where T : class
+    {
+        var kept = new List<T>();
+        var used = new Dictionary<ModelId, int>();
+        foreach (T item in items)
+        {
+            if (idSelector(item) is not ModelId id)
+            {
+                continue;
+            }
+
+            int usedCount = used.GetValueOrDefault(id);
+            if (usedCount < stock.GetValueOrDefault(id))
+            {
+                kept.Add(item);
+                used[id] = usedCount + 1;
+            }
+        }
+
+        return kept;
     }
 }

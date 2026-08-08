@@ -17,8 +17,11 @@ public static class MainMenuButtonPatch
 
     private const string SubmenuIconPath = "res://ExtractionRun/images/ui/submenu_extraction_run.png";
 
-    private const float RowScale = 0.8f;
+    private const float RowScale = 0.86f;
     private const float RowGap = 70f;
+    private const float GoldHue = 0.678f;
+    private const float GoldSaturation = 1.2f;
+    private const float GoldValue = 0.65f;
 
     [HarmonyPatch(typeof(NSingleplayerSubmenu), "_Ready")]
     private static class SingleplayerSubmenuPatch
@@ -55,7 +58,11 @@ public static class MainMenuButtonPatch
         Control bgPanel = button.GetNode<Control>("BgPanel");
         if (bgPanel.Material != null)
         {
-            bgPanel.Material = (ShaderMaterial)bgPanel.Material.Duplicate();
+            var shader = (ShaderMaterial)bgPanel.Material.Duplicate();
+            shader.SetShaderParameter("h", GoldHue);
+            shader.SetShaderParameter("s", GoldSaturation);
+            shader.SetShaderParameter("v", GoldValue);
+            bgPanel.Material = shader;
         }
 
         submenu.AddChild(button);

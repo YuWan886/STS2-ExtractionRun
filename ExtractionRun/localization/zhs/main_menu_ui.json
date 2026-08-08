@@ -107,6 +107,11 @@
   "EXTRACTION_RUN.pool.MockPotionPool": "测试药水池",
   "EXTRACTION_RUN.pool.DeprecatedPotionPool": "已废弃药水池",
 
+  "EXTRACTION_RUN.confirm.reset.header": "重置仓库",
+  "EXTRACTION_RUN.confirm.reset.body": "确定要重置仓库吗？将清空全部卡牌、遗物、药水与金币，重新发放初始物品，并清空已配置的携带。",
+  "EXTRACTION_RUN.confirm.confirm": "确定",
+  "EXTRACTION_RUN.confirm.cancel": "取消",
+
   "EXTRACTION_RUN.toast.deposit": "撤离成功！战利品已存入仓库。",
   "EXTRACTION_RUN.toast.firstSeed": "已为仓库发放初始与普通卡牌、遗物及 1000 金币。"
 }

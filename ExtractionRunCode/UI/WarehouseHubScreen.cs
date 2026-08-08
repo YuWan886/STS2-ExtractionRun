@@ -54,6 +54,10 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     private readonly CarryConfig _carry;
     private int _carryGold;
 
+    /// <summary>The hub currently open in the scene tree (null when closed) — lets the console command refresh it after
+    /// mutating the stores underneath. 当前打开中的仓库大厅（关闭时为 null）——供控制台指令在底层改动仓库后刷新界面。</summary>
+    public static WarehouseHubScreen? Current { get; private set; }
+
     private Tab _activeTab = Tab.Cards;
 
     // Per-tab search queries (persisted). 各 Tab 搜索词（持久化）。
@@ -83,7 +87,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     private Label _carryDeckLabel = null!;
     private Label _carryRelicsLabel = null!;
     private Label _carryPotionsLabel = null!;
-    private Label _goldValueLabel = null!;
+    private LineEdit _goldInput = null!;
     private Button _startButton = null!;
     private Label _startHintLabel = null!;
 
@@ -131,8 +135,19 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
 
     public override void _Ready()
     {
+        Current = this;
         BuildUi();
         Refresh();
+    }
+
+    public override void _ExitTree()
+    {
+        if (Current == this)
+        {
+            Current = null;
+        }
+
+        base._ExitTree();
     }
 
     public override void _Process(double delta)
@@ -495,13 +510,18 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         minus.Pressed += () => ChangeCarryGold(-GoldStep);
         row.AddChild(minus);
 
-        _goldValueLabel = MakeLabel("");
-        _goldValueLabel.CustomMinimumSize = new Vector2(96f, 42f);
-        _goldValueLabel.HorizontalAlignment = HorizontalAlignment.Center;
-        _goldValueLabel.VerticalAlignment = VerticalAlignment.Center;
-        _goldValueLabel.AddThemeFontOverride("font", ExtractionTheme.Bold);
-        _goldValueLabel.AddThemeFontSizeOverride("font_size", 18);
-        row.AddChild(_goldValueLabel);
+        _goldInput = new LineEdit
+        {
+            Text = _carryGold.ToString(),
+            Alignment = HorizontalAlignment.Center,
+            CustomMinimumSize = new Vector2(96f, 42f),
+            PlaceholderText = "0",
+        };
+        _goldInput.AddThemeFontSizeOverride("font_size", 18);
+        _goldInput.TextChanged += OnGoldTextChanged;
+        _goldInput.TextSubmitted += _ => CommitGoldInput();
+        _goldInput.FocusExited += () => CommitGoldInput();
+        row.AddChild(_goldInput);
 
         var plus = MakeButton("+", ExtractionTheme.ButtonSecondary);
         plus.CustomMinimumSize = new Vector2(44f, 42f);
@@ -510,6 +530,30 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         row.AddChild(plus);
 
         return row;
+    }
+
+    private void OnGoldTextChanged(string text)
+    {
+        if (text.Any(c => !char.IsDigit(c)))
+        {
+            string filtered = new string(text.Where(char.IsDigit).ToArray());
+            _goldInput.Text = filtered;
+            _goldInput.CaretColumn = filtered.Length;
+        }
+    }
+
+    private void CommitGoldInput()
+    {
+        string text = _goldInput.Text.Trim();
+        int value = _carryGold;
+        if (text.Length > 0 && int.TryParse(text, out int parsed) && parsed >= 0)
+        {
+            value = parsed;
+        }
+
+        int max = Math.Min(_warehouse.Gold, WarehouseStore.MaxGold);
+        _carryGold = Math.Clamp(value, 0, max);
+        _goldInput.Text = _carryGold.ToString();
     }
 
     // ----- Footer: primary start action -----
@@ -549,7 +593,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     {
         int max = Math.Min(_warehouse.Gold, WarehouseStore.MaxGold);
         _carryGold = Math.Clamp(_carryGold + delta, 0, max);
-        _goldValueLabel.Text = _carryGold.ToString();
+        _goldInput.Text = _carryGold.ToString();
     }
 
     // ----- Refresh 重建 -----
@@ -567,7 +611,10 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
 
         int availableGold = Math.Max(0, _warehouse.Gold - _carryGold);
         _goldChipLabel.Text = ExtractionLocalization.GoldWarehouseText(availableGold);
-        _goldValueLabel.Text = _carryGold.ToString();
+        if (!_goldInput.HasFocus())
+        {
+            _goldInput.Text = _carryGold.ToString();
+        }
 
         int maxCards = Math.Max(0, ExtractionSettingsPage.Current.MaxCarryCards);
         int maxRelics = Math.Max(0, ExtractionSettingsPage.Current.MaxCarryRelics);
@@ -614,6 +661,23 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
 
         UpdateCarryTiles();
         _clearButton.Visible = _query.Length > 0;
+    }
+
+    // ----- External mutation refresh (console command) 控制台外部改动后的刷新 -----
+
+    /// <summary>Rebuilds the hub UI after the console grew the warehouse underneath (add). The carry is untouched.
+    /// 控制台增仓后重建界面（add）；携带不变。</summary>
+    public void RefreshForExternalMutation() => Refresh();
+
+    /// <summary>
+    /// Rebuilds the hub UI and re-syncs the carry-gold working value to the revalidated carry config. Used after
+    /// console reset/remove — ops that can shrink the warehouse the carry draws from, so the local gold field must
+    /// follow the clamp. 重置/删仓后重建界面，并把携带金币工作值同步到重校验后的携带配置。
+    /// </summary>
+    public void RefreshForExternalMutationAfterShrink()
+    {
+        _carryGold = Math.Min(_carry.Gold, _warehouse.Gold);
+        Refresh();
     }
 
     private void UpdateCarryTiles()

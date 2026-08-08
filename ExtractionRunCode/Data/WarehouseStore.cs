@@ -50,25 +50,52 @@ public static class WarehouseStore
 
             data.Seeded = true;
             data.Version++;
-            data.Gold = ClampGold(data.Gold + 1000);
-
-            foreach (CardModel card in ModelDb.AllCards
-                         .Where(c => c.Rarity is CardRarity.Basic or CardRarity.Common)
-                         .GroupBy(c => c.Id)
-                         .Select(g => g.First()))
-            {
-                data.Cards.Add(NormalizeCard(card.ToMutable().ToSerializable()));
-            }
-
-            foreach (RelicModel relic in ModelDb.AllRelics
-                         .Where(r => r.Rarity is RelicRarity.Starter or RelicRarity.Common)
-                         .GroupBy(r => r.Id)
-                         .Select(g => g.First()))
-            {
-                data.Relics.Add(NormalizeRelic(relic.ToMutable().ToSerializable()));
-            }
+            GrantInitialItems(data);
         });
         store.Save(DataKey);
+    }
+
+    /// <summary>
+    /// Wipes the warehouse and re-grants the initial seed (all Basic+Common cards, all Starter+Common relics, 1000 gold)
+    /// — the console reset command. The idempotent migration flags (<see cref="WarehouseData.Seeded"/>/<see cref="WarehouseData.Normalized"/>)
+    /// and the persisted hub filter/search state are deliberately left untouched: this is a content reset, not a re-migration.
+    /// 清空仓库并重新发放初始种子（初始/普通卡牌、初始/普通遗物、1000金币）——控制台重置指令。迁移标志与界面过滤状态不动。
+    /// </summary>
+    public static void Reset()
+    {
+        var store = RitsuLibFramework.GetDataStore(Entry.ModId);
+        store.Modify<WarehouseData>(DataKey, data =>
+        {
+            data.Version++;
+            data.Cards.Clear();
+            data.Relics.Clear();
+            data.Potions.Clear();
+            data.Gold = 0;
+            GrantInitialItems(data);
+        });
+        store.Save(DataKey);
+    }
+
+    /// <summary>Grants the first-use seed into a warehouse (starter/common cards + relics + 1000 gold). 发放初始种子。</summary>
+    private static void GrantInitialItems(WarehouseData data)
+    {
+        data.Gold = ClampGold(data.Gold + 1000);
+
+        foreach (CardModel card in ModelDb.AllCards
+                     .Where(c => c.Rarity is CardRarity.Basic or CardRarity.Common)
+                     .GroupBy(c => c.Id)
+                     .Select(g => g.First()))
+        {
+            data.Cards.Add(NormalizeCard(card.ToMutable().ToSerializable()));
+        }
+
+        foreach (RelicModel relic in ModelDb.AllRelics
+                     .Where(r => r.Rarity is RelicRarity.Starter or RelicRarity.Common)
+                     .GroupBy(r => r.Id)
+                     .Select(g => g.First()))
+        {
+            data.Relics.Add(NormalizeRelic(relic.ToMutable().ToSerializable()));
+        }
     }
 
     /// <summary>
@@ -192,6 +219,55 @@ public static class WarehouseStore
             data.Gold = ClampGold(data.Gold - carried.Gold);
         });
         store.Save(DataKey);
+    }
+
+    /// <summary>Removes up to <paramref name="count"/> copies of the given card id from the warehouse. Returns the number actually removed.
+    /// 从仓库移除最多 count 张指定卡牌，返回实际移除数。</summary>
+    public static int RemoveCards(ModelId id, int count) => RemoveCopies(id, count, d => d.Cards, c => c.Id);
+
+    /// <summary>Removes up to <paramref name="count"/> copies of the given relic id from the warehouse. Returns the number actually removed.
+    /// 从仓库移除最多 count 个指定遗物，返回实际移除数。</summary>
+    public static int RemoveRelics(ModelId id, int count) => RemoveCopies(id, count, d => d.Relics, r => r.Id);
+
+    /// <summary>Removes up to <paramref name="count"/> copies of the given potion id from the warehouse. Returns the number actually removed.
+    /// 从仓库移除最多 count 瓶指定药水，返回实际移除数。</summary>
+    public static int RemovePotions(ModelId id, int count) => RemoveCopies(id, count, d => d.Potions, p => p.Id);
+
+    /// <summary>Removes gold (never below zero). Returns the new warehouse balance. 移除金币（不会扣成负数），返回新余额。</summary>
+    public static int RemoveGold(int amount)
+    {
+        var store = RitsuLibFramework.GetDataStore(Entry.ModId);
+        int balance = 0;
+        store.Modify<WarehouseData>(DataKey, data =>
+        {
+            data.Version++;
+            data.Gold = ClampGold(data.Gold - Math.Max(0, amount));
+            balance = data.Gold;
+        });
+        store.Save(DataKey);
+        return balance;
+    }
+
+    private static int RemoveCopies<T>(ModelId id, int count, Func<WarehouseData, List<T>> listSelector,
+        Func<T, ModelId?> idSelector) where T : class
+    {
+        var store = RitsuLibFramework.GetDataStore(Entry.ModId);
+        int removed = 0;
+        store.Modify<WarehouseData>(DataKey, data =>
+        {
+            data.Version++;
+            List<T> list = listSelector(data);
+            for (int i = list.Count - 1; i >= 0 && removed < count; i--)
+            {
+                if (idSelector(list[i]) == id)
+                {
+                    list.RemoveAt(i);
+                    removed++;
+                }
+            }
+        });
+        store.Save(DataKey);
+        return removed;
     }
 
     /// <summary>

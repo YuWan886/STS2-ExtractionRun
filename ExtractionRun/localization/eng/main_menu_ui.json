@@ -107,6 +107,11 @@
   "EXTRACTION_RUN.pool.MockPotionPool": "Mock Potion Pool",
   "EXTRACTION_RUN.pool.DeprecatedPotionPool": "Deprecated Potion Pool",
 
+  "EXTRACTION_RUN.confirm.reset.header": "Reset Warehouse",
+  "EXTRACTION_RUN.confirm.reset.body": "Reset the warehouse? All cards, relics, potions and gold will be cleared and the starter items re-granted. Your configured carry will also be cleared.",
+  "EXTRACTION_RUN.confirm.confirm": "Confirm",
+  "EXTRACTION_RUN.confirm.cancel": "Cancel",
+
   "EXTRACTION_RUN.toast.deposit": "Extraction successful! Loot deposited into your warehouse.",
   "EXTRACTION_RUN.toast.firstSeed": "Warehouse seeded with starter & common cards, starter & common relics and 1000 gold."
 }

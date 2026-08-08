@@ -97,6 +97,13 @@ public static class ExtractionLocalization
     public static string GoldWarehouseText(int gold) => Formatted("EXTRACTION_RUN.gold.warehouse", gold);
     public static string GoldCarryText(int gold) => Formatted("EXTRACTION_RUN.gold.carry", gold);
 
+    // ----- Console confirm dialog 控制台确认弹窗 -----
+
+    public static string ConfirmResetHeaderText() => Text("EXTRACTION_RUN.confirm.reset.header");
+    public static string ConfirmResetBodyText() => Text("EXTRACTION_RUN.confirm.reset.body");
+    public static string ConfirmButtonText() => Text("EXTRACTION_RUN.confirm.confirm");
+    public static string CancelButtonText() => Text("EXTRACTION_RUN.confirm.cancel");
+
     // ----- Settlement screen 结算界面 -----
 
     public static string SettlementButtonText() => Text("EXTRACTION_RUN.settlement.button");
