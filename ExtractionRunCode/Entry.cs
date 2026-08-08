@@ -4,6 +4,7 @@ using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using STS2RitsuLib;
 using STS2RitsuLib.Interop;
+using ExtractionRun.Compatibility;
 using ExtractionRun.Data;
 using ExtractionRun.Lifecycle;
 using ExtractionRun.Settings;
@@ -37,6 +38,9 @@ public static class Entry
 
         Harmony harmony = new(ModId);
         harmony.PatchAll(assembly);
+
+        // Some hosts (beta) reject modifier changes on the character-select lobby; adapt at runtime.
+        ModifierChangeCompat.InstallIfNeeded(harmony);
 
         Logger.Info("ExtractionRun initialized.");
     }

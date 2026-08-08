@@ -1,6 +1,7 @@
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Relics;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Models.Cards;
 using MegaCrit.Sts2.Core.Saves.Runs;
 using STS2RitsuLib;
 using STS2RitsuLib.Data;
@@ -57,9 +58,11 @@ public static class WarehouseStore
 
     /// <summary>
     /// Wipes the warehouse and re-grants the initial seed (all Basic+Common cards, all Starter+Common relics, 1000 gold)
-    /// — the console reset command. The idempotent migration flags (<see cref="WarehouseData.Seeded"/>/<see cref="WarehouseData.Normalized"/>)
-    /// and the persisted hub filter/search state are deliberately left untouched: this is a content reset, not a re-migration.
+    /// — the console reset command. The idempotent migration flags (<see cref="WarehouseData.Seeded"/>/<see cref="WarehouseData.Normalized"/>
+    /// /<see cref="WarehouseData.IdentityRepaired"/>) and the persisted hub filter/search state are deliberately left untouched:
+    /// this is a content reset, not a re-migration.
     /// 清空仓库并重新发放初始种子（初始/普通卡牌、初始/普通遗物、1000金币）——控制台重置指令。迁移标志与界面过滤状态不动。
+    /// 此乃内容重置，非重新迁移。
     /// </summary>
     public static void Reset()
     {
@@ -137,6 +140,35 @@ public static class WarehouseStore
     }
 
     /// <summary>
+    /// One-shot legacy migration for the identity fix: pre-fix <see cref="NormalizeCard"/> wiped <c>Props</c> on every
+    /// card, which left identity cards (e.g. MadScience — its base has <c>Type = None</c>) unplayable in the warehouse.
+    /// Re-run normalization over every stored card: growth is stripped again (already base), and identity cards are
+    /// re-filled with a valid default. Idempotent — guarded by <see cref="WarehouseData.IdentityRepaired"/>.
+    /// 身份修复的一次性迁移：旧版 NormalizeCard 清空了全部 Props，把身份牌（如疯狂科学，基础态 Type 为 None）抹成不可打。
+    /// 对库存每张卡重跑归一化：成长牌再次剥回基础态，身份牌回填有效默认。幂等——由 IdentityRepaired 守卫。
+    /// </summary>
+    public static void EnsureIdentityRepaired()
+    {
+        var store = RitsuLibFramework.GetDataStore(Entry.ModId);
+        store.Modify<WarehouseData>(DataKey, data =>
+        {
+            if (data.IdentityRepaired)
+            {
+                return;
+            }
+
+            data.IdentityRepaired = true;
+            data.Version++;
+
+            for (int i = 0; i < data.Cards.Count; i++)
+            {
+                data.Cards[i] = NormalizeCard(data.Cards[i]);
+            }
+        });
+        store.Save(DataKey);
+    }
+
+    /// <summary>
     /// Persists the live warehouse state (used for the hub's in-memory filter/search state before close).
     /// 持久化当前仓库（用于关闭仓库前把界面过滤/搜索状态落盘）。
     /// </summary>
@@ -147,8 +179,11 @@ public static class WarehouseStore
 
     /// <summary>
     /// Deposits extraction loot into the warehouse. Every item is normalized to its BASE state first (upgrades,
-    /// enchantments, props, potion slot indices are stripped) — the warehouse only ever holds plain cards. Appends
-    /// (a deck clone never reaches here — see DepositFilter). 把撤离战利品追加存入仓库，进库前统一归一到基础态。
+    /// enchantments, run-scoped growth and potion slot indices stripped; identity cards keep their saved props — see
+    /// <see cref="NormalizeCard"/>). A single un-normalizable card (e.g. a corrupt saved-prop type) is skipped rather than
+    /// aborting the whole deposit, so one bad loot item never swallows the settlement. Appends (a deck clone never reaches
+    /// here — see DepositFilter). 把撤离战利品追加存入仓库，进库前统一归一（升级/附魔/成长/栏位剥离，身份卡保留 Props）。
+    /// 单张无法归一的卡（如非法保存属性类型）跳过而非让整次存入失败，避免一张坏牌吞掉整局结算。
     /// </summary>
     public static void Deposit(IEnumerable<SerializableCard>? cards, IEnumerable<SerializableRelic>? relics,
         IEnumerable<SerializablePotion>? potions, int gold)
@@ -160,7 +195,17 @@ public static class WarehouseStore
 
             if (cards != null)
             {
-                data.Cards.AddRange(cards.Select(NormalizeCard));
+                foreach (SerializableCard sc in cards)
+                {
+                    try
+                    {
+                        data.Cards.Add(NormalizeCard(sc));
+                    }
+                    catch (Exception ex)
+                    {
+                        Entry.Logger.Warn($"WarehouseStore.Deposit: skipping un-normalizable card {sc.Id}: {ex.Message}");
+                    }
+                }
             }
 
             if (relics != null)
@@ -271,16 +316,147 @@ public static class WarehouseStore
     }
 
     /// <summary>
-    /// Strips a card down to its base state: no upgrade, no enchantment, no saved props, no deck-floor marker.
-    /// Mutates and returns the same instance (callers hold throwaway serializables). 把卡牌归一为基础态（去升级/附魔/属性）。
+    /// Strips a card down to base: no upgrade, no enchantment, no run-scoped growth, no deck-floor marker — except for
+    /// "identity" cards whose saved props ARE the card's identity. A MadScience's tinker type/rider live in <c>Props</c>;
+    /// without them its base model has <c>Type = CardType.None</c>, which the game never creates legitimately and whose
+    /// <c>OnPlay</c> throws. So for those cards the props are kept (and re-filled with a valid default when missing, e.g.
+    /// a legacy-stripped or console-added copy), while every other card is reduced to its plain base form. Mutates and
+    /// returns the same instance (callers hold throwaway serializables).
+    /// 把卡牌归一为：无升级/附魔/局内成长/入牌组楼层——但"身份牌"除外：疯狂科学的敲钟类型/附效存在 Props 里，剥掉后其基础
+    /// 模型 Type 为 None（游戏从不合法产生、打出即崩）。故身份牌保留 Props（缺失时回填有效默认，覆盖旧档抹平/控制台添加的
+    /// 副本），其余卡一律回到纯基础态。
     /// </summary>
     public static SerializableCard NormalizeCard(SerializableCard card)
     {
         card.CurrentUpgradeLevel = 0;
         card.Enchantment = null;
-        card.Props = null;
         card.FloorAddedToDeck = null;
+
+        CardModel? model = card.Id == null ? null : ModelDb.GetByIdOrNull<CardModel>(card.Id);
+        if (model != null && IsIdentityCard(model))
+        {
+            EnsureIdentityDefault(card, model);
+        }
+        else
+        {
+            card.Props = null;
+        }
+
         return card;
+    }
+
+    /// <summary>
+    /// An "identity card" is one whose base model (props stripped) is degenerate — <c>Type = None</c> means the card is
+    /// unplayable, so its identity must live in its saved props. All other cards are plain playable bases whose props are
+    /// run-scoped growth (GeneticAlgorithm etc.) and get stripped.
+    /// 身份牌判定：剥离 Props 后基础模型退化（Type 为 None）即不可打，身份必然存于保存属性；其余卡基础形态可打，其 Props
+    /// 是局内成长（如遗传算法），应剥除。
+    /// </summary>
+    private static bool IsIdentityCard(CardModel model)
+    {
+        try
+        {
+            return model.Type == CardType.None;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Ensures an identity card carries VALID identity props. Props that restore a playable card are kept as-is; a
+    /// missing/empty <c>Props</c> (legacy-stripped) or one that still resolves to <c>Type = None</c> (console-added
+    /// MadScience carries <c>TinkerTimeType = None</c>) is re-filled with the card's canonical playable default —
+    /// MadScience → Attack with no rider. Cards with an unknown valid default are left untouched (the carry-in guard in
+    /// <see cref="ExtractionModifier"/> drops the few that remain degenerate).
+    /// 保证身份卡带有"有效"身份属性：能还原为可打状态的 Props 原样保留；缺失（旧档抹平）或还原后仍为 Type=None
+    /// （控制台添加的疯狂科学带着 TinkerTimeType=None）时，回填该卡可打的有效默认——疯狂科学 → 攻击型无附效。
+    /// 未知有效默认的卡不动（残余退化卡由携带侧守卫丢弃）。
+    /// </summary>
+    private static void EnsureIdentityDefault(SerializableCard card, CardModel model)
+    {
+        SavedProperties? props = card.Props;
+        bool degenerate = props == null;
+        if (!degenerate)
+        {
+            try
+            {
+                CardModel probe = model.ToMutable();
+                props!.Fill(probe);
+                degenerate = probe.Type == CardType.None;
+            }
+            catch (Exception)
+            {
+                degenerate = true;
+            }
+        }
+
+        if (!degenerate)
+        {
+            return;
+        }
+
+        if (model is MadScience)
+        {
+            MadScience copy = (MadScience)model.ToMutable();
+            copy.TinkerTimeType = CardType.Attack;
+            card.Props = SavedProperties.From(copy);
+        }
+    }
+
+    /// <summary>
+    /// Reward for clearing an extraction run: the character's full starting deck (all copies) and starting relics are
+    /// deposited into the warehouse, normalized like any other loot — granted on every clear. Returns the granted items
+    /// so the settlement screen can fold them into the deposited loot.
+    /// 通关奖励：通关搜打撤后，把该角色的整套初始牌组（含全部张数）与初始遗物按普通战利品归一化入账，每次通关都发放。
+    /// 返回本次发放的物品，供结算界面并入存入战利品展示。
+    /// </summary>
+    public static (List<SerializableCard> Cards, List<SerializableRelic> Relics) GrantCharacterCompletionReward(CharacterModel character)
+    {
+        string entry = character.Id.Entry;
+        var grantedCards = new List<SerializableCard>();
+        var grantedRelics = new List<SerializableRelic>();
+        var store = RitsuLibFramework.GetDataStore(Entry.ModId);
+        store.Modify<WarehouseData>(DataKey, data =>
+        {
+            data.Version++;
+
+            int grantedCardCount = character.StartingDeck.Count();
+            int grantedRelicCount = character.StartingRelics.Count;
+            Entry.Logger.Info($"GrantCharacterCompletionReward: clear with {entry} — " +
+                              $"granting {grantedCardCount} starter cards and {grantedRelicCount} starter relics.");
+
+            foreach (CardModel card in character.StartingDeck)
+            {
+                try
+                {
+                    SerializableCard sc = NormalizeCard(card.ToMutable().ToSerializable());
+                    data.Cards.Add(sc);
+                    grantedCards.Add(sc);
+                }
+                catch (Exception ex)
+                {
+                    Entry.Logger.Warn($"GrantCharacterCompletionReward: skipping starter card {card.Id}: {ex.Message}");
+                }
+            }
+
+            foreach (RelicModel relic in character.StartingRelics)
+            {
+                try
+                {
+                    SerializableRelic sr = NormalizeRelic(relic.ToMutable().ToSerializable());
+                    data.Relics.Add(sr);
+                    grantedRelics.Add(sr);
+                }
+                catch (Exception ex)
+                {
+                    Entry.Logger.Warn($"GrantCharacterCompletionReward: skipping starter relic {relic.Id}: {ex.Message}");
+                }
+            }
+        });
+        store.Save(DataKey);
+        return (grantedCards, grantedRelics);
     }
 
     /// <summary>

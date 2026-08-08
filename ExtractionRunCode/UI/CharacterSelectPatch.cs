@@ -72,8 +72,9 @@ public static class CharacterSelectPatch
 
         if (ExtractionRunContext.IsExtractionLaunch)
         {
-            ExtractionCarrySync.ApplyExtractionModifier(lobby);
+            // Consume the intent first: even if the modifier apply failed, a later vanilla launch must not inherit it.
             ExtractionRunContext.IsExtractionLaunch = false;
+            ExtractionCarrySync.ApplyExtractionModifier(lobby);
             Entry.Logger.Info("CharacterSelectPatch: extraction modifier applied to lobby.");
         }
         else if (!isHost && ExtractionCarrySync.HasExtractionModifier(lobby.Modifiers))

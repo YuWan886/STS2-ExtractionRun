@@ -116,19 +116,22 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         _lobby = lobby;
         Layer = 100;
 
-        // Seed on first open (idempotent), run the one-shot legacy normalization, then load the live warehouse and a
-        // detached copy of the pending carry — only written back on confirm/start, so closing never leaks edits.
-        // 首次种子、一次性旧档归一、加载实时仓库与待发携带的独立副本（仅在确认/开跑时写回）。
+        // Seed on first open (idempotent), run the one-shot legacy normalizations (base-state + identity-card repair),
+        // then load the live warehouse and a detached copy of the pending carry — only written back on confirm/start,
+        // so closing never leaks edits. 首次种子、一次性旧档归一（基础态 + 身份牌修复）、加载实时仓库与待发携带的独立副本
+        // （仅在确认/开跑时写回）。
         WarehouseStore.EnsureSeeded();
         WarehouseStore.EnsureNormalized();
+        WarehouseStore.EnsureIdentityRepaired();
         _warehouse = WarehouseStore.Current;
         _carry = PendingCarryStore.Snapshot();
         _carryGold = _carry.Gold;
 
         // A pending carry saved before the base-only change may still hold upgraded/enchanted items. Normalize it in
         // place so carried items always match the (base-only) warehouse exactly — otherwise a stale +1 carry would
-        // consume a base copy while injecting the upgraded one (free upgrade). 旧档遗留的待发携带可能仍带升级/附魔；原地归一到
-        // 基础态，保证携带物与（仅基础态的）仓库精确匹配，否则旧 +1 携带会消耗基础卡却注入升级卡（白嫖升级）。
+        // consume a base copy while injecting the upgraded one (free upgrade). Identity cards (MadScience) keep their
+        // saved props here, matching the warehouse's own normalization. 旧档遗留的待发携带可能仍带升级/附魔；原地归一到与
+        // 仓库一致的基础态（身份牌保留其 Props），否则旧 +1 携带会消耗基础卡却注入升级卡（白嫖升级）。
         for (int i = 0; i < _carry.Cards.Count; i++)
         {
             _carry.Cards[i] = WarehouseStore.NormalizeCard(_carry.Cards[i]);

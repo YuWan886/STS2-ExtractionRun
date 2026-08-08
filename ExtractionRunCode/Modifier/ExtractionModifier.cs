@@ -79,6 +79,16 @@ public sealed class ExtractionModifier : ModifierModel
                 }
 
                 CardModel card = runState.LoadCard(sc, player);
+                if (card.Type == CardType.None)
+                {
+                    // Degenerate identity card (repair failed / unknown valid default): the game never plays a
+                    // Type=None card and its OnPlay would throw — drop it instead of injecting a crash card.
+                    // 退化身份牌（修复失败/未知有效默认）：游戏从不打出 Type=None 的牌，打出即崩，丢弃防崩。
+                    runState.RemoveCard(card);
+                    Entry.Logger.Warn($"ExtractionModifier skipping degenerate card (Type=None): {sc.Id}");
+                    continue;
+                }
+
                 player.Deck.AddInternal(card, silent: true);
             }
 

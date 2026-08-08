@@ -4,11 +4,13 @@ namespace ExtractionRun.Data;
 
 /// <summary>
 /// Persistent per-profile stash for the 搜打撤 (Search-Loot-Extract) mode.
-/// Cards/relics/potions are stored in their serializable form, normalized to their BASE state on entry
-/// (upgrade / enchantment / props stripped — see <see cref="WarehouseStore.NormalizeCard"/>), so the warehouse holds
-/// plain cards only. Stored in <c>ModDataStore</c> with <c>SaveScope.Profile</c> (one warehouse per save slot / player).
-/// 搜打撤模式的持久仓库（每个存档位一份）。卡牌/遗物/药水以可序列化形式存储，进库时归一为基础态
-/// （升级/附魔/属性剥除，见 <see cref="WarehouseStore.NormalizeCard"/>），仓库只存基础卡。
+/// Cards/relics/potions are stored in their serializable form, normalized to base on entry: upgrades, enchantments
+/// and run-scoped growth are stripped, but "identity" cards (whose base model is degenerate without its saved props —
+/// e.g. MadScience's tinker type/rider) keep those props so they stay playable (see <see cref="WarehouseStore.NormalizeCard"/>).
+/// Stored in <c>ModDataStore</c> with <c>SaveScope.Profile</c> (one warehouse per save slot / player).
+/// 搜打撤模式的持久仓库（每个存档位一份）。卡牌/遗物/药水以可序列化形式存储，进库时归一：升级/附魔/局内成长剥除，
+/// 但"身份牌"（剥离保存态后基础模型退化，如疯狂科学的敲钟类型/附效）保留其 Props 以保证可用
+/// （见 <see cref="WarehouseStore.NormalizeCard"/>）。
 /// </summary>
 public sealed class WarehouseData
 {
@@ -20,6 +22,14 @@ public sealed class WarehouseData
     /// 是否已把升级前的旧数据原地归一（更新后首次打开的一次性迁移）。
     /// </summary>
     public bool Normalized { get; set; }
+
+    /// <summary>
+    /// Whether identity cards whose props were stripped by the pre-identity-aware normalize have been repaired in place
+    /// (one-shot migration on first open after the identity fix — a base MadScience has <c>Type = None</c> and would
+    /// crash on play). 是否已把旧版归一化抹掉 Props 的身份牌原地修复（身份修复更新后首次打开的一次性迁移——基础态疯狂科学
+    /// 的 Type 为 None，打出即崩）。
+    /// </summary>
+    public bool IdentityRepaired { get; set; }
 
     /// <summary>
     /// Monotonic mutation counter. Bumped by every list/gold write so the module-level display cache

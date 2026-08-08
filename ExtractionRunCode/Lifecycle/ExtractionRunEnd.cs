@@ -12,10 +12,12 @@ using ExtractionRun.UI;
 namespace ExtractionRun.Lifecycle;
 
 /// <summary>
-/// Extracts loot at run end. On victory with the local player alive, the final deck (minus cloned cards), relics,
-/// potions and gold are deposited into the local player's warehouse. Death, abandonment, or "team won but I died"
-/// deposit nothing — the carried items were already consumed at run start.
-/// 跑局结束结算：胜利且本地玩家存活时，把最终牌组（排除克隆牌）、遗物、药水、金币存入本机仓库。死亡/放弃/队赢我死均不结算。
+/// Extracts loot at run end. On victory — a TEAM victory counts as a personal victory even if the local player died —
+/// the final deck (minus cloned cards), relics, potions and gold are deposited into the local player's warehouse, plus
+/// the character's full starting deck + starting relics as the clear reward (granted on every clear).
+/// Defeat or abandonment deposit nothing — the carried items were already consumed at run start.
+/// 跑局结束结算：胜利时（队伍胜利即算个人胜利，本地玩家阵亡也算）把最终牌组（排除克隆牌）、遗物、药水、金币存入本机仓库，
+/// 并发放该角色整套初始牌组+初始遗物作为通关奖励（每次通关都发）。失败/放弃不结算——携带物已在开跑时消耗。
 /// </summary>
 public static class ExtractionRunEnd
 {
@@ -47,22 +49,61 @@ public static class ExtractionRunEnd
                 return;
             }
 
-            bool success = evt.IsVictory && me.Creature.IsAlive;
+            bool success = evt.IsVictory;
             var result = new ExtractionSettlementResult { Success = success };
 
             if (success)
             {
-                System.Collections.Generic.List<SerializableCard> cards = me.Deck.Cards
-                    .Where(c => !CloneMarker.ShouldExclude(c))
-                    .Select(c => c.ToSerializable())
-                    .ToList();
-                System.Collections.Generic.List<SerializableRelic> relics = me.Relics
-                    .Select(r => r.ToSerializable())
-                    .ToList();
-                System.Collections.Generic.List<SerializablePotion> potions = me.PotionSlots
-                    .Select((p, i) => p?.ToSerializable(i))
-                    .OfType<SerializablePotion>()
-                    .ToList();
+                var cards = new List<SerializableCard>();
+                foreach (CardModel c in me.Deck.Cards)
+                {
+                    if (CloneMarker.ShouldExclude(c))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        cards.Add(c.ToSerializable());
+                    }
+                    catch (Exception ex)
+                    {
+                        Entry.Logger.Warn($"ExtractionRunEnd: skipping un-serializable card {c.Id}: {ex.Message}");
+                    }
+                }
+
+                var relics = new List<SerializableRelic>();
+                foreach (RelicModel r in me.Relics)
+                {
+                    try
+                    {
+                        relics.Add(r.ToSerializable());
+                    }
+                    catch (Exception ex)
+                    {
+                        Entry.Logger.Warn($"ExtractionRunEnd: skipping un-serializable relic {r.Id}: {ex.Message}");
+                    }
+                }
+
+                var potions = new List<SerializablePotion>();
+                int slot = 0;
+                foreach (PotionModel? p in me.PotionSlots)
+                {
+                    if (p != null)
+                    {
+                        try
+                        {
+                            potions.Add(p.ToSerializable(slot));
+                        }
+                        catch (Exception ex)
+                        {
+                            Entry.Logger.Warn($"ExtractionRunEnd: skipping un-serializable potion {p.Id}: {ex.Message}");
+                        }
+                    }
+
+                    slot++;
+                }
+
                 int gold = me.Gold;
 
                 result.Cards.AddRange(cards);
@@ -71,6 +112,10 @@ public static class ExtractionRunEnd
                 result.Gold = gold;
 
                 WarehouseStore.Deposit(cards, relics, potions, gold);
+                (List<SerializableCard> rewardCards, List<SerializableRelic> rewardRelics) =
+                    WarehouseStore.GrantCharacterCompletionReward(me.Character);
+                result.Cards.AddRange(rewardCards);
+                result.Relics.AddRange(rewardRelics);
                 Entry.Logger.Info($"ExtractionRun: extracted {cards.Count} cards, {relics.Count} relics, " +
                                   $"{potions.Count} potions, {gold} gold.");
                 RitsuToastService.ShowInfo(ExtractionLocalization.DepositSuccessText());

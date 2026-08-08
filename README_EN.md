@@ -26,6 +26,7 @@ On first use, the warehouse is seeded with all Basic and Common cards, all Start
 - **Persistent warehouse**: independent per-save storage that accumulates loot across runs (gold capped at 9,999,999).
 - **Carry system**: freely assemble a loadout before each run; capacity is configurable (default 10 cards / 3 relics).
 - **Search-Loot-Extract loop**: winner takes all, loser loses everything — death or abandon forfeits every carried item.
+- **Clear reward**: every victory grants the character's full starting deck and starting relics, keeping your baseline kit renewable for future runs.
 - **Warehouse hub**: three tabs (cards / relics / potions), each with its own search box and multi-select filters (source pool, rarity, type, cost), a virtualized grid that stays smooth with large warehouses, and background art preloading.
 - **Extraction report**: an "Extraction Report" button on the game-over screen shows exactly what was deposited or lost.
 - **Singleplayer & multiplayer**: both work; in MP, each player's loadout is settled independently per their own settings.

@@ -188,13 +188,33 @@ public static class ExtractionItemTiles
         string poolSlug = CardPoolSlug(rep.Id);
         string pool = CardPoolName(rep.Id);
         string haystack = string.Join(' ', name, pool, poolSlug, rep.Id?.ToString() ?? "").ToLowerInvariant();
+
+        // Identity cards (MadScience) keep their tinker type/rider in Props — restore them so the tile's type, art and
+        // cost reflect the real card instead of the degenerate base model (whose Type is None). Other cards have no
+        // Props and display from the base model directly.
+        // 身份牌（疯狂科学）的类型/附效存在 Props 里——按 Props 还原，瓦片的类型/贴图/费用才与真实卡一致（基础模型 Type 为 None）。
+        // 其余卡无 Props，直接按基础模型展示。
+        CardModel? display = card;
+        if (card != null && rep.Props != null)
+        {
+            try
+            {
+                display = card.ToMutable();
+                rep.Props.Fill(display);
+            }
+            catch (Exception)
+            {
+                display = card;
+            }
+        }
+
         return new CardGroup(rep, name, pool, count,
-            loadArt ? CardTexture(rep.Id) : null,
+            loadArt ? CardTexture(display) : null,
             card?.Rarity ?? CardRarity.None,
-            card?.Type ?? CardType.None,
-            CardCostBucket(card),
+            display?.Type ?? CardType.None,
+            CardCostBucket(display),
             poolSlug,
-            card?.PortraitPath ?? "",
+            display?.PortraitPath ?? "",
             haystack);
     }
 
@@ -456,11 +476,10 @@ public static class ExtractionItemTiles
         return potion?.Title.GetFormattedText() ?? id?.ToString() ?? "?";
     }
 
-    private static Texture2D? CardTexture(ModelId? id)
+    private static Texture2D? CardTexture(CardModel? card)
     {
         try
         {
-            CardModel? card = id == null ? null : ModelDb.GetByIdOrNull<CardModel>(id);
             return card?.Portrait;
         }
         catch (Exception)
