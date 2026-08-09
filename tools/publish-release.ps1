@@ -52,11 +52,13 @@ try {
     if (-not (git rev-parse --is-inside-work-tree 2>$null)) { throw 'Not inside a git repository.' }
     if (git tag -l $Tag) { throw "Tag '$Tag' already exists locally." }
 
-    # Working tree must be clean except the two files this workflow manages
-    # (the /release command writes CHANGELOG.md before invoking this script).
+    # Working tree must be clean except the files this workflow manages: the version bumps
+    # (manifest + csproj) and CHANGELOG.md are committed as the single "release: <tag>" commit,
+    # and the release tooling files may carry fixes into that same commit. Anything else blocks.
     foreach ($line in (git status --porcelain)) {
-        $path = ($line -replace '^\S+\s+', '').Trim()
-        if ($path -ne "$modId.json" -and $path -ne 'CHANGELOG.md') {
+        $path = $line.Substring(3).Trim()
+        $managed = @("$modId.json", "$modId.csproj", 'CHANGELOG.md', 'tools/publish-release.ps1', '.claude/commands/release.md')
+        if ($managed -notcontains $path) {
             throw "Working tree not clean: unexpected change at '$path'. Commit or stash it before releasing."
         }
     }
@@ -74,7 +76,9 @@ try {
     $modRoot = Join-Path (Join-Path $Sts2Path 'mods') $modId
     $pckPath = Join-Path $modRoot "$modId.pck"
 
-    # ── Bump manifest version (deployed to the mods folder by the build below) ──
+    # ── Bump manifest + csproj version (deployed to the mods folder by the build below) ──
+    # Both bumps live in the single "release: <tag>" commit, so no pre-staged version change is
+    # needed and the working tree stays clean between releases.
     $json = Get-Content $modManifest -Raw
     if ($json -notmatch '"version"\s*:\s*"([^"]*)"') {
         throw "Could not locate the version field in $modManifest"
@@ -83,6 +87,15 @@ try {
     $json = $json -replace '"version"\s*:\s*"[^"]*"', ('"version": "' + $Tag + '"')
     [System.IO.File]::WriteAllText($modManifest, $json, (New-Object System.Text.UTF8Encoding($false)))
     Write-Host "Bumped $modId.json version: $oldVersion -> $Tag"
+
+    $csprojText = Get-Content $contentProject -Raw
+    if ($csprojText -notmatch '<Version>([^<]+)</Version>') {
+        throw "Could not locate the <Version> field in $contentProject"
+    }
+    $oldCsprojVersion = $Matches[1]
+    $csprojText = $csprojText -replace '<Version>[^<]+</Version>', ('<Version>' + $Tag + '</Version>')
+    [System.IO.File]::WriteAllText($contentProject, $csprojText, (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host "Bumped $([System.IO.Path]::GetFileName($contentProject)) <Version>: $oldCsprojVersion -> $Tag"
 
     # ── Build: .pck first, then the multi-version bundle ─────────
     # build-variants.ps1 never touches the .pck (PckPackerEnabled=false), so publish must run
@@ -173,6 +186,7 @@ try {
     Write-Host "`n-- commit + tag --"
     $preHead = (git rev-parse HEAD).Trim()
     git add "$modId.json"
+    git add "$modId.csproj"
     if (Test-Path (Join-Path $repoRoot 'CHANGELOG.md')) { git add 'CHANGELOG.md' }
     git diff --cached --quiet
     if ($LASTEXITCODE -eq 0) { throw "Nothing to commit: version already at $Tag and CHANGELOG.md unchanged." }

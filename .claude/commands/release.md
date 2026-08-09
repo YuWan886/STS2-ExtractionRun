@@ -8,7 +8,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 
 `$ARGUMENTS` 是目标版本号（`vX.Y.Z`，可带 `-beta/-preview/-rc` 后缀），可选开关 `--yes`（跳过发布前确认）、`--draft`（建草稿不直接发布）；可选透传构建参数 `-ApiRoot <目录>`、`-Versions <0.107.1,0.110.1>`、`-Sts2Path <游戏目录>`。
 
-在本 mod 仓库根（当前工作目录 `gameplay/STS2-ExtractionRun`，独立 git 仓库）执行。发布前工作区应干净（除 `ExtractionRun.json`、`CHANGELOG.md` 外无改动）。
+在本 mod 仓库根（当前工作目录 `gameplay/STS2-ExtractionRun`，独立 git 仓库）执行。发布前工作区应干净（除 `ExtractionRun.json`、`ExtractionRun.csproj`、`CHANGELOG.md` 外无改动）。**一次发版只产生一条 `release: <tag>` 提交**：manifest 与 csproj 版本号、CHANGELOG.md，以及发版期间对脚本/指令的必要修复（提前暂存即可并入）都进这一条。
 
 ## 1. 预检
 
@@ -31,7 +31,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 powershell -NoProfile -ExecutionPolicy Bypass -File tools/publish-release.ps1 -Tag <tag> [-ApiRoot ...] [-Versions ...] [-Sts2Path ...]
 ```
 
-该脚本会升级 `ExtractionRun.json` 版本、`dotnet publish`（重出 pck）→ `build-variants.ps1`（全部快照）、白名单打包到 `dist/ExtractionRun-<tag>.zip`、提交（manifest + CHANGELOG）并打**本地** tag。它不推送、不碰 GitHub。
+该脚本会升级 `ExtractionRun.json` 与 `ExtractionRun.csproj` 的版本号、`dotnet publish`（重出 pck）→ `build-variants.ps1`（全部快照）、白名单打包到 `dist/ExtractionRun-<tag>.zip`、把版本号 + CHANGELOG 提交为唯一的一条 `release: <tag>` 并打**本地** tag。它不推送、不碰 GitHub。
 
 从输出 `RELEASE SUMMARY` 读取 `ZIP=`（zip 路径）、`COVERED=`（逗号分隔的兼容版本）。失败即中止，按脚本报错处理，不要绕过。
 
