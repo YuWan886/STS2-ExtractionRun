@@ -139,12 +139,24 @@ try {
     $zipPath = Join-Path $distDir $zipName
     if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    [System.IO.Compression.ZipFile]::CreateFromDirectory($stageDir, $zipPath)
+    # ZipFile.CreateFromDirectory writes '\'-separated entry names on Windows, which breaks strict
+    # extractors and diverges from the v0.1.1 archive's '/' convention — build entries manually.
+    $stageDirFull = (Resolve-Path $stageDir).Path.TrimEnd('\', '/')
+    $zipStream = [System.IO.File]::Open($zipPath, [System.IO.FileMode]::Create)
+    $zip = [System.IO.Compression.ZipArchive]::new($zipStream, [System.IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($file in (Get-ChildItem -Recurse -File $stageDir)) {
+            $rel = $file.FullName.Substring($stageDirFull.Length + 1).Replace('\', '/')
+            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $file.FullName, $rel) | Out-Null
+        }
+    } finally {
+        $zip.Dispose()
+    }
 
     # Re-open the zip and assert every expected entry is present before discarding the stage.
     $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
     try {
-        $entries = @($zip.Entries | ForEach-Object { $_.FullName })
+        $entries = @($zip.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
         $expected = @($rootFiles) + @($covered | ForEach-Object { "lib/$_/ExtractionRun.Content.dll" }) `
             + @($covered | ForEach-Object { "lib/$_/compat-target.txt" })
         $missingInZip = @($expected | Where-Object { $entries -notcontains $_ })
