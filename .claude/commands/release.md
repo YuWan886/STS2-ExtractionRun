@@ -21,7 +21,7 @@ allowed-tools: Bash, Read, Write, Edit, Glob, Grep
 ## 2. 生成发布信息
 
 - 按 conventional 前缀分组 `git log <prev>..HEAD --oneline` 的提交：`feat`→功能、`fix`→修复、`perf`→性能、`refactor`→重构、`docs`→文档、`build`/`chore`→杂项；去掉前缀、保留 `(scope)`；无法归类的进「其他」。各组按提交顺序（旧的在上），标题与正文用中文。
-- 把分组结果 prepend 到仓库根 `CHANGELOG.md`：文件头部是 `# CHANGELOG` 标题，其下新增 `## <tag>` 小节；文件不存在则直接新建。
+- 把分组结果 prepend 到仓库根 `CHANGELOG.md`：文件头部是 `# CHANGELOG` 标题，其下新增 `## <tag> - <当天日期>` 小节（如 `## v0.1.2 - 2026-08-09`），后续所有版本小节都带发布日期；文件不存在则直接新建。
 - 同样内容写入 `dist/release-notes-<tag>.md`（`dist/` 已被 gitignore，不入库）。
 - 把这段草稿展示给用户，允许其提出修改（正文以用户意见为准）。
 
