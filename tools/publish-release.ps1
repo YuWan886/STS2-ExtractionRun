@@ -90,7 +90,7 @@ try {
     # the pck actually refreshed instead of trusting dotnet's exit status.
     $pckBefore = if (Test-Path $pckPath) { (Get-Item $pckPath).LastWriteTimeUtc } else { [datetime]::MinValue }
     Write-Host "`n-- dotnet publish (pck + installed-game variant) --"
-    $publishArgs = @('publish', $contentProject, '-c', $Configuration, '/p:Sts2Path=' + $Sts2Path)
+    $publishArgs = @('publish', $contentProject, '-c', $Configuration, ('/p:Sts2Path=' + $Sts2Path))
     & dotnet @publishArgs
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed (exit $LASTEXITCODE)." }
     if (-not (Test-Path $pckPath)) { throw "dotnet publish did not produce $pckPath" }
