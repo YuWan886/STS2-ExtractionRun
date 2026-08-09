@@ -54,9 +54,6 @@ public static class CarryCodeImport
         int relicsLeft = Math.Max(0, maxRelics);
         int potionsLeft = MaxPotions;
 
-        // Per-id imported counts, so a hand-crafted code listing the same entry twice cannot draw more copies than the
-        // warehouse holds (the generated code never duplicates entries — Encode merges them — but a crafted one can).
-        // 按 id 累计已导入数，防止手工构造的重复条目绕过仓库存量（生成码不会重复条目——Encode 会合并——但构造码可能）。
         var importedById = new Dictionary<ModelId, int>();
 
         foreach (CarryCodec.CodeItem item in code.Items)
@@ -95,7 +92,6 @@ public static class CarryCodeImport
 
         if (!TryResolveKind(item.Entry, out CarryCodec.ItemKind kind, out ModelId id))
         {
-            // Owner is loaded (or base content) but the id is unknown here — version drift or a mangled code.
             result.Unrecognized.Add(item);
             result.MissingCount += item.Count;
             return;

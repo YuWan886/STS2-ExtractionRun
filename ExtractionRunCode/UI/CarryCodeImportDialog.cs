@@ -300,26 +300,29 @@ public sealed partial class CarryCodeImportDialog : CanvasLayer
 
         foreach (CarryCodec.CodeItem item in decoded.Items)
         {
-            (string name, string pool, Texture2D? texture) = PreviewFor(item);
+            (string name, string pool, Texture2D? texture, ModelId? id) = PreviewFor(item);
             _preview.AddChild(ExtractionItemTiles.MakeItemTile(name, pool, item.Count, texture,
-                ExtractionItemTiles.ItemTileAction.Display, null));
+                ExtractionItemTiles.ItemTileAction.Display, null, id));
         }
     }
 
-    /// <summary>Resolves a code item's display (name / pool / art) for the shared-loadout preview. Items whose owner mod
-    /// is missing render as raw id + missing-mod note; known-but-unresolvable ids render as unrecognized.
-    /// 解析码中物品的展示信息（名称/池/贴图）。缺 mod 的物品以原始 id + 缺 mod 提示渲染；解析不到的按无法识别渲染。</summary>
-    private (string Name, string Pool, Texture2D? Texture) PreviewFor(CarryCodec.CodeItem item)
+    /// <summary>Resolves a code item's display (name / pool / art / tooltip id) for the shared-loadout preview. Items
+    /// whose owner mod is missing render as raw id + missing-mod note (no tooltip id — there is no model to tip);
+    /// known-but-unresolvable ids render as unrecognized.
+    /// 解析码中物品的展示信息（名称/池/贴图/提示 id）。缺 mod 的物品以原始 id + 缺 mod 提示渲染（无提示 id——没有模型可提示）；
+    /// 解析不到的按无法识别渲染。</summary>
+    private (string Name, string Pool, Texture2D? Texture, ModelId? Id) PreviewFor(CarryCodec.CodeItem item)
     {
         if (item.OwnerStem != null && !CarryCodeOwner.IsModLoaded(item.OwnerStem))
         {
             return (item.Entry,
-                ExtractionLocalization.CodeMissingModsText(CarryCodeOwner.ResolveModDisplayName(item.OwnerStem)), null);
+                ExtractionLocalization.CodeMissingModsText(CarryCodeOwner.ResolveModDisplayName(item.OwnerStem)), null,
+                null);
         }
 
         if (!CarryCodeImport.TryResolveKind(item.Entry, out CarryCodec.ItemKind kind, out ModelId id))
         {
-            return (item.Entry, ExtractionLocalization.CodeUnrecognizedText(), null);
+            return (item.Entry, ExtractionLocalization.CodeUnrecognizedText(), null, null);
         }
 
         try
@@ -330,34 +333,34 @@ public sealed partial class CarryCodeImportDialog : CanvasLayer
                 {
                     CardModel? card = ModelDb.GetByIdOrNull<CardModel>(id);
                     return card == null
-                        ? (item.Entry, ExtractionLocalization.CodeUnrecognizedText(), null)
+                        ? (item.Entry, ExtractionLocalization.CodeUnrecognizedText(), null, null)
                         : (card.Title ?? item.Entry,
                             ExtractionLocalization.PoolNameText(ExtractionItemTiles.CardPoolSlug(id)),
-                            SafeTexture(() => card.Portrait));
+                            SafeTexture(() => card.Portrait), id);
                 }
                 case CarryCodec.ItemKind.Relic:
                 {
                     RelicModel? relic = ModelDb.GetByIdOrNull<RelicModel>(id);
                     return relic == null
-                        ? (item.Entry, ExtractionLocalization.CodeUnrecognizedText(), null)
+                        ? (item.Entry, ExtractionLocalization.CodeUnrecognizedText(), null, null)
                         : (relic.Title.GetFormattedText(),
                             ExtractionLocalization.PoolNameText(ExtractionItemTiles.RelicPoolSlug(id)),
-                            SafeTexture(() => relic.Icon));
+                            SafeTexture(() => relic.Icon), id);
                 }
                 default:
                 {
                     PotionModel? potion = ModelDb.GetByIdOrNull<PotionModel>(id);
                     return potion == null
-                        ? (item.Entry, ExtractionLocalization.CodeUnrecognizedText(), null)
+                        ? (item.Entry, ExtractionLocalization.CodeUnrecognizedText(), null, null)
                         : (potion.Title.GetFormattedText(),
                             ExtractionLocalization.PoolNameText(ExtractionItemTiles.PotionPoolSlug(id)),
-                            SafeTexture(() => potion.Image));
+                            SafeTexture(() => potion.Image), id);
                 }
             }
         }
         catch (Exception)
         {
-            return (item.Entry, ExtractionLocalization.CodeUnrecognizedText(), null);
+            return (item.Entry, ExtractionLocalization.CodeUnrecognizedText(), null, null);
         }
     }
 

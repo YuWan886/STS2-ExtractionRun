@@ -1,4 +1,5 @@
 using Godot;
+using MegaCrit.Sts2.Core.Models;
 using ExtractionRun.Lifecycle;
 
 namespace ExtractionRun.UI;
@@ -152,7 +153,7 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
             success
                 ? ExtractionLocalization.SettlementCardsText(_result.Cards.Count)
                 : ExtractionLocalization.SettlementLostCardsText(_result.Cards.Count),
-            ExtractionItemTiles.GroupCards(_result.Cards).Select(g => (g.Name, g.Pool, g.Count, g.Texture))));
+            ExtractionItemTiles.GroupCards(_result.Cards).Select(g => (g.Name, g.Pool, g.Count, g.Texture, g.Rep.Id))));
 
         body.AddChild(new HSeparator());
 
@@ -160,7 +161,7 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
             success
                 ? ExtractionLocalization.SettlementRelicsText(_result.Relics.Count)
                 : ExtractionLocalization.SettlementLostRelicsText(_result.Relics.Count),
-            ExtractionItemTiles.GroupRelics(_result.Relics).Select(g => (g.Name, g.Pool, g.Count, g.Texture))));
+            ExtractionItemTiles.GroupRelics(_result.Relics).Select(g => (g.Name, g.Pool, g.Count, g.Texture, g.Rep.Id))));
 
         body.AddChild(new HSeparator());
 
@@ -168,7 +169,7 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
             success
                 ? ExtractionLocalization.SettlementPotionsText(_result.Potions.Count)
                 : ExtractionLocalization.SettlementLostPotionsText(_result.Potions.Count),
-            ExtractionItemTiles.GroupPotions(_result.Potions).Select(g => (g.Name, g.Pool, g.Count, g.Texture))));
+            ExtractionItemTiles.GroupPotions(_result.Potions).Select(g => (g.Name, g.Pool, g.Count, g.Texture, g.Rep.Id))));
 
         body.AddChild(new HSeparator());
 
@@ -177,7 +178,8 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
         return scroll;
     }
 
-    private Control BuildSection(string header, IEnumerable<(string Name, string Pool, int Count, Texture2D? Texture)> tiles)
+    private Control BuildSection(string header,
+        IEnumerable<(string Name, string Pool, int Count, Texture2D? Texture, ModelId? Id)> tiles)
     {
         var box = new VBoxContainer();
         box.AddThemeConstantOverride("separation", 8);
@@ -208,10 +210,10 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
             grid.AddThemeConstantOverride("h_separation", GridGap);
             grid.AddThemeConstantOverride("v_separation", GridGap);
             grid.Columns = ComputeColumns();
-            foreach ((string name, string pool, int count, Texture2D? texture) in list)
+            foreach ((string name, string pool, int count, Texture2D? texture, ModelId? id) in list)
             {
                 grid.AddChild(ExtractionItemTiles.MakeItemTile(name, pool, count, texture,
-                    ExtractionItemTiles.ItemTileAction.Display, null));
+                    ExtractionItemTiles.ItemTileAction.Display, null, id));
             }
 
             box.AddChild(grid);

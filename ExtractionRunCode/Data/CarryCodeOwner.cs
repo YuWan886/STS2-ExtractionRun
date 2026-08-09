@@ -46,8 +46,6 @@ public static class CarryCodeOwner
                 return NormalizeStem(modId);
             }
 
-            // Assembly fallback: attribute any loaded-model type to the mod whose assembly defines it, independent of
-            // registration framework or public-entry convention.
             Assembly modelAssembly = model.GetType().Assembly;
             foreach (LoadedModInfo info in LoadedMods)
             {
@@ -58,8 +56,6 @@ public static class CarryCodeOwner
             }
         }
 
-        // Entry-prefix heuristic — the only path when the model itself can't be resolved. Base entries are
-        // underscore-separated slugs, so the first segment is compared against loaded mods' normalized ids.
         string entry = id.Entry;
         int underscore = entry.IndexOf('_');
         string firstSegment = underscore < 0 ? entry : entry.Substring(0, underscore);

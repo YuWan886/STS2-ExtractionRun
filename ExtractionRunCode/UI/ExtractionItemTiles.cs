@@ -301,13 +301,14 @@ public static class ExtractionItemTiles
     /// <summary>
     /// Builds one item tile: art, name, source pool, quantity badge, and an add/remove affordance. Convenience wrapper
     /// over <see cref="CreateItemTile"/> + <see cref="PopulateItemTile"/> for one-shot tiles (carry, settlement).
-    /// 构建一张物品卡片：贴图、名称、来源池、数量角标与增删操作（一次性瓦片的便捷封装）。
+    /// <paramref name="id"/> feeds the tile's vanilla hover tip. 构建一张物品卡片：贴图、名称、来源池、数量角标与增删操作
+    /// （一次性瓦片的便捷封装）；id 供悬停提示使用。
     /// </summary>
     public static Button MakeItemTile(string name, string pool, int count, Texture2D? texture,
-        ItemTileAction action, Action? onClick)
+        ItemTileAction action, Action? onClick, ModelId? id)
     {
         Button button = CreateItemTile();
-        PopulateItemTile(button, name, pool, count, texture, action);
+        PopulateItemTile(button, name, pool, count, texture, action, id);
         if (onClick != null)
         {
             button.Pressed += onClick;
@@ -318,8 +319,10 @@ public static class ExtractionItemTiles
 
     /// <summary>
     /// Creates a tile's full skeleton (art well, labels, badge, glyph) without binding data. The virtual grid pools
-    /// these and re-populates them on scroll. Child refs are stashed as Meta on the button. 创建瓦片完整骨架（不含数据），
-    /// 供虚拟网格池化复用；子节点引用以 Meta 存于按钮上。
+    /// these and re-populates them on scroll. Child refs are stashed as Meta on the button. The hover handlers are
+    /// attached once here and read the tile's current item id from Meta, so recycled tiles never accumulate listeners.
+    /// 创建瓦片完整骨架（不含数据），供虚拟网格池化复用；子节点引用以 Meta 存于按钮上。悬停处理器在此一次性挂载，
+    /// 从 Meta 读取瓦片当前物品 id，回收瓦片不会叠加监听。
     /// </summary>
     public static Button CreateItemTile()
     {
@@ -429,16 +432,25 @@ public static class ExtractionItemTiles
         button.SetMeta("_badge", badgeLabel);
         button.SetMeta("_glyph", glyph);
         button.SetMeta("_glyphLabel", glyphLabel);
+        button.MouseEntered += () => ExtractionItemTooltip.Show(button);
+        button.MouseExited += () => ExtractionItemTooltip.Hide(button);
         return button;
     }
 
     /// <summary>
-    /// Re-binds a pooled tile to new data (name / pool / count / texture / action). Idempotent — safe to call on an
-    /// already-populated tile. 把池化瓦片重新绑定到新数据（名称/池/数量/贴图/角色）。
+    /// Re-binds a pooled tile to new data (name / pool / count / texture / action / tooltip id). Idempotent — safe to
+    /// call on an already-populated tile. A tooltip open for the previous item is closed when the id changes (a recycled
+    /// tile would otherwise keep showing stale content). 把池化瓦片重新绑定到新数据（名称/池/数量/贴图/角色/提示 id）。
+    /// 换 id 时关闭旧物品的悬停提示，避免回收瓦片残留上一张卡的内容。
     /// </summary>
     public static void PopulateItemTile(Button button, string name, string pool, int count, Texture2D? texture,
-        ItemTileAction action)
+        ItemTileAction action, ModelId? id)
     {
+        if (ExtractionItemTooltip.SetItem(button, id))
+        {
+            ExtractionItemTooltip.Hide(button);
+        }
+
         GetMetaLabel(button, "_name").Text = name;
         GetMetaLabel(button, "_pool").Text = pool;
         GetMetaNode<TextureRect>(button, "_art").Texture = texture;

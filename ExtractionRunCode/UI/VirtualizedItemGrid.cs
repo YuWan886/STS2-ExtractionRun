@@ -1,4 +1,5 @@
 using Godot;
+using MegaCrit.Sts2.Core.Models;
 
 namespace ExtractionRun.UI;
 
@@ -17,7 +18,7 @@ public sealed partial class VirtualizedItemGrid : Control
     /// <summary>A tile's render payload. Texture is a resolver so the preload path can fill art in place.
     /// 单瓦片渲染数据；贴图为解析器，供预载路径原地补图。</summary>
     public sealed record RenderData(string Name, string Pool, int Count, Func<Texture2D?> Texture,
-        ExtractionItemTiles.ItemTileAction Action, Action? OnClick);
+        ExtractionItemTiles.ItemTileAction Action, Action? OnClick, ModelId? Id);
 
     private readonly List<Button> _pool = new();
     private readonly Dictionary<Button, Action?> _callbacks = new();
@@ -160,7 +161,8 @@ public sealed partial class VirtualizedItemGrid : Control
         int col = index % _columns;
         float stride = ExtractionItemTiles.TileHeight + Gap;
         tile.Position = new Vector2(col * (ExtractionItemTiles.TileWidth + Gap), row * stride);
-        ExtractionItemTiles.PopulateItemTile(tile, data.Name, data.Pool, data.Count, data.Texture(), data.Action);
+        ExtractionItemTiles.PopulateItemTile(tile, data.Name, data.Pool, data.Count, data.Texture(), data.Action,
+            data.Id);
         _callbacks[tile] = data.OnClick;
         tile.Visible = true;
     }
@@ -189,6 +191,7 @@ public sealed partial class VirtualizedItemGrid : Control
 
     private void Release(Button tile)
     {
+        ExtractionItemTooltip.Hide(tile);
         tile.Visible = false;
         _callbacks[tile] = null;
         _pool.Add(tile);

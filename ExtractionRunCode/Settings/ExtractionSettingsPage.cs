@@ -7,9 +7,11 @@ using ExtractionRun.UI;
 namespace ExtractionRun.Settings;
 
 /// <summary>
-/// Registers the 搜打撤 settings page: max carried cards / relics sliders and a reset button. Values are bound to the
-/// <see cref="ExtractionSettings"/> POCO via <see cref="ModSettingsValueBinding{TData,TValue}"/> at SaveScope.Global.
-/// 搜打撤设置页：最大携带牌数/遗物数滑条与重置按钮，通过 ModSettingsValueBinding 绑定到 ExtractionSettings。
+/// Registers the 搜打撤 settings page: max carried cards / relics sliders, per-kind hover-tooltip toggles, and a reset
+/// button. Values are bound to the <see cref="ExtractionSettings"/> POCO via <see cref="ModSettingsValueBinding{TData,TValue}"/>
+/// at SaveScope.Global.
+/// 搜打撤设置页：最大携带牌数/遗物数滑条、卡牌/遗物/药水各自的悬停提示开关，与重置按钮，通过 ModSettingsValueBinding 绑定到
+/// ExtractionSettings。
 /// </summary>
 public static class ExtractionSettingsPage
 {
@@ -27,6 +29,21 @@ public static class ExtractionSettingsPage
         Entry.ModId, DataKey, SaveScope.Global,
         static s => s.MaxCarryRelics,
         static (s, v) => s.MaxCarryRelics = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, bool> ShowCardHoverTipsBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.ShowCardHoverTips,
+        static (s, v) => s.ShowCardHoverTips = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, bool> ShowRelicHoverTipsBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.ShowRelicHoverTips,
+        static (s, v) => s.ShowRelicHoverTips = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, bool> ShowPotionHoverTipsBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.ShowPotionHoverTips,
+        static (s, v) => s.ShowPotionHoverTips = v);
 
     public static ExtractionSettings Current =>
         RitsuLibFramework.GetDataStore(Entry.ModId).Get<ExtractionSettings>(DataKey);
@@ -49,7 +66,13 @@ public static class ExtractionSettingsPage
                 .AddIntSlider("max_cards", ExtractionLocalization.MaxCardsText(), MaxCardsBinding,
                     0, MaxCardsSlider, 1, description: ExtractionLocalization.MaxCardsDescriptionText())
                 .AddIntSlider("max_relics", ExtractionLocalization.MaxRelicsText(), MaxRelicsBinding,
-                    0, MaxRelicsSlider, 1, description: ExtractionLocalization.MaxRelicsDescriptionText()))
+                    0, MaxRelicsSlider, 1, description: ExtractionLocalization.MaxRelicsDescriptionText())
+                .AddToggle("show_card_hover_tips", ExtractionLocalization.ShowCardHoverTipsText(),
+                    ShowCardHoverTipsBinding, description: ExtractionLocalization.ShowCardHoverTipsDescriptionText())
+                .AddToggle("show_relic_hover_tips", ExtractionLocalization.ShowRelicHoverTipsText(),
+                    ShowRelicHoverTipsBinding, description: ExtractionLocalization.ShowRelicHoverTipsDescriptionText())
+                .AddToggle("show_potion_hover_tips", ExtractionLocalization.ShowPotionHoverTipsText(),
+                    ShowPotionHoverTipsBinding, description: ExtractionLocalization.ShowPotionHoverTipsDescriptionText()))
             .AddSection("reset", section => section
                 .WithTitle(ExtractionLocalization.ResetSectionTitleText())
                 .AddButton(
@@ -68,5 +91,11 @@ public static class ExtractionSettingsPage
         MaxCardsBinding.Save();
         MaxRelicsBinding.Write(Current.MaxCarryRelics);
         MaxRelicsBinding.Save();
+        ShowCardHoverTipsBinding.Write(Current.ShowCardHoverTips);
+        ShowCardHoverTipsBinding.Save();
+        ShowRelicHoverTipsBinding.Write(Current.ShowRelicHoverTips);
+        ShowRelicHoverTipsBinding.Save();
+        ShowPotionHoverTipsBinding.Write(Current.ShowPotionHoverTips);
+        ShowPotionHoverTipsBinding.Save();
     }
 }

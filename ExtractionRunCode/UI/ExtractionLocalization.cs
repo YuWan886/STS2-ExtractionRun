@@ -40,6 +40,27 @@ public static class ExtractionLocalization
         ModSettingsText.LocString(SettingsTable, "extractionrun.settings.maxRelics.description",
             "Maximum number of relics you can carry into a run.");
 
+    public static ModSettingsText ShowCardHoverTipsText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.showCardHoverTips", "Show card tooltips");
+
+    public static ModSettingsText ShowCardHoverTipsDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.showCardHoverTips.description",
+            "Show vanilla tooltips when hovering over cards.");
+
+    public static ModSettingsText ShowRelicHoverTipsText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.showRelicHoverTips", "Show relic tooltips");
+
+    public static ModSettingsText ShowRelicHoverTipsDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.showRelicHoverTips.description",
+            "Show vanilla tooltips when hovering over relics.");
+
+    public static ModSettingsText ShowPotionHoverTipsText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.showPotionHoverTips", "Show potion tooltips");
+
+    public static ModSettingsText ShowPotionHoverTipsDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.showPotionHoverTips.description",
+            "Show vanilla tooltips when hovering over potions.");
+
     public static ModSettingsText ResetSectionTitleText() =>
         ModSettingsText.LocString(SettingsTable, "extractionrun.settings.section.reset.title", "Reset");
 

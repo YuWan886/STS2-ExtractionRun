@@ -844,7 +844,8 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
                     {
                         _carry.Cards.Remove(rep);
                         Refresh();
-                    }));
+                    },
+                    g.Rep.Id));
             }
         }
 
@@ -863,7 +864,8 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
                     {
                         _carry.Relics.Remove(rep);
                         Refresh();
-                    }));
+                    },
+                    g.Rep.Id));
             }
         }
 
@@ -882,7 +884,8 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
                     {
                         _carry.Potions.Remove(rep);
                         Refresh();
-                    }));
+                    },
+                    g.Rep.Id));
             }
         }
     }
@@ -1002,7 +1005,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
             SerializableCard rep = g.Rep;
             rows.Add(new VirtualizedItemGrid.RenderData(g.Name, g.Pool, available,
                 () => WarehouseCache.Resolve(g.PortraitPath), ExtractionItemTiles.ItemTileAction.Add,
-                () => AddToCarryCards(rep)));
+                () => AddToCarryCards(rep), g.Rep.Id));
         }
 
         UpdateLimitHint(Tab.Cards, filtered, rows.Count);
@@ -1048,7 +1051,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
             SerializableRelic rep = g.Rep;
             rows.Add(new VirtualizedItemGrid.RenderData(g.Name, g.Pool, available,
                 () => WarehouseCache.Resolve(g.IconPath), ExtractionItemTiles.ItemTileAction.Add,
-                () => AddToCarryRelics(rep)));
+                () => AddToCarryRelics(rep), g.Rep.Id));
         }
 
         UpdateLimitHint(Tab.Relics, filtered, rows.Count);
@@ -1094,7 +1097,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
             SerializablePotion rep = g.Rep;
             rows.Add(new VirtualizedItemGrid.RenderData(g.Name, g.Pool, available,
                 () => WarehouseCache.Resolve(g.ImagePath), ExtractionItemTiles.ItemTileAction.Add,
-                () => AddToCarryPotions(rep)));
+                () => AddToCarryPotions(rep), g.Rep.Id));
         }
 
         UpdateLimitHint(Tab.Potions, filtered, rows.Count);
