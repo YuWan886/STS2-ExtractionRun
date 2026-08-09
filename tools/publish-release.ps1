@@ -139,6 +139,7 @@ try {
     $zipPath = Join-Path $distDir $zipName
     if (Test-Path $zipPath) { Remove-Item -Force $zipPath }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
+    Add-Type -AssemblyName System.IO.Compression
     # ZipFile.CreateFromDirectory writes '\'-separated entry names on Windows, which breaks strict
     # extractors and diverges from the v0.1.1 archive's '/' convention — build entries manually.
     $stageDirFull = (Resolve-Path $stageDir).Path.TrimEnd('\', '/')
