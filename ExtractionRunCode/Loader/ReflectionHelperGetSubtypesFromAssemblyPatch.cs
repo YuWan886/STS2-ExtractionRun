@@ -16,7 +16,7 @@ internal static class ReflectionHelperGetSubtypesFromAssemblyPatch
 {
     private static void Postfix(Assembly assembly, Type parentType, ref IEnumerable<Type> __result)
     {
-        if (!ReferenceEquals(assembly, typeof(LoaderMain).Assembly))
+        if (!string.Equals(assembly.GetName().Name, typeof(LoaderMain).Assembly.GetName().Name, StringComparison.Ordinal))
             return;
 
         var variantTypes = LoaderMain.GetVariantModTypes();
