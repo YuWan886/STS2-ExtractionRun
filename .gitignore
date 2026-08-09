@@ -12,6 +12,7 @@ local.props
 *.tmp
 *.log
 .build-variants-tmp/
+dist/
 
 AGENTS.md
 CLAUDE.md

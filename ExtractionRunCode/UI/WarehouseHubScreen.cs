@@ -1,10 +1,12 @@
 using Godot;
 using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Multiplayer.Game.Lobby;
+using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Saves.Runs;
+using STS2RitsuLib.Ui.Toast;
 using ExtractionRun.Data;
 using ExtractionRun.Lifecycle;
 using ExtractionRun.Settings;
@@ -107,6 +109,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     private LineEdit _goldInput = null!;
     private Button _startButton = null!;
     private Label _startHintLabel = null!;
+    private Button _generateButton = null!;
 
     public WarehouseHubScreen(NSubmenuStack stack, Control? loadingOverlay, HubMode mode, StartRunLobby? lobby = null)
     {
@@ -501,6 +504,10 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     {
         PanelContainer card = MakeCard(stretchRatio: 2f, out VBoxContainer body);
 
+        // Gear-code row sits above the carried-deck section in every mode (singleplayer / host / client modal).
+        // 战备码行放在携带牌组上方，所有模式（单机 / 主机 / 客机模态）都有。
+        body.AddChild(BuildCodeRow());
+
         body.AddChild(MakeSectionHeaderWithDetail(ExtractionLocalization.CarryDeckText(), out _carryDeckLabel));
         _carryCardList = MakeList();
         body.AddChild(Scroll(_carryCardList, stretchRatio: 2f));
@@ -522,6 +529,91 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         body.AddChild(BuildGoldRow());
 
         return card;
+    }
+
+    // ----- Gear code (战备码) 生成 / 导入 -----
+
+    private Control BuildCodeRow()
+    {
+        var row = new HBoxContainer();
+        row.AddThemeConstantOverride("separation", 8);
+
+        _generateButton = MakeButton(ExtractionLocalization.CodeGenerateText(), ExtractionTheme.ButtonSecondary);
+        _generateButton.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        _generateButton.Pressed += OnGenerateCode;
+        row.AddChild(_generateButton);
+
+        var import = MakeButton(ExtractionLocalization.CodeImportText(), ExtractionTheme.ButtonSecondary);
+        import.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        import.Pressed += OnImportCode;
+        row.AddChild(import);
+
+        return row;
+    }
+
+    /// <summary>True when nothing is carried (including the live gold field — the stepper only writes <c>_carry.Gold</c>
+    /// on start/confirm). An empty carry has nothing worth encoding. 是否未携带任何物品（含实时金币字段——步进器只在开跑/确认时写
+    /// _carry.Gold）。空携带没有值得编码的内容。</summary>
+    private bool CarryIsEmpty =>
+        _carry.Cards.Count == 0 && _carry.Relics.Count == 0 && _carry.Potions.Count == 0 && _carryGold == 0;
+
+    /// <summary>Encodes the current carry draft (WYSIWYG gold included), copies it to the clipboard, and toasts. Pure
+    /// read of the detached draft — nothing is persisted. 把当前携带草稿（含所见即所得的金币）编码为战备码并复制到剪贴板，
+    /// 弹提示。只读草稿，不持久化任何东西。</summary>
+    private void OnGenerateCode()
+    {
+        if (CarryIsEmpty)
+        {
+            return;
+        }
+
+        // Encode the live gold working value, not the stale _carry.Gold (only written on start/confirm).
+        // 编码用实时金币工作值，而非仅在开跑/确认时才写的 _carry.Gold。
+        var encodeCarry = new CarryConfig
+        {
+            Cards = _carry.Cards,
+            Relics = _carry.Relics,
+            Potions = _carry.Potions,
+            Gold = _carryGold,
+        };
+        string code = CarryCodec.Encode(encodeCarry, CarryCodeOwner.ResolveOwnerStem);
+        DisplayServer.ClipboardSet(code);
+        RitsuToastService.ShowInfo(ExtractionLocalization.CodeCopiedText());
+        Entry.Logger.Info($"WarehouseHub: generated gear code ({encodeCarry.Cards.Count}c/" +
+                          $"{encodeCarry.Relics.Count}r/{encodeCarry.Potions.Count}p/{encodeCarry.Gold}g).");
+    }
+
+    /// <summary>Opens the import dialog against the live warehouse; on apply, replaces the carry draft in place.
+    /// 打开导入弹窗（对着实时仓库）；应用时原地替换携带草稿。</summary>
+    private void OnImportCode()
+    {
+        var dialog = new CarryCodeImportDialog(_warehouse, ApplyImportedCarry);
+        if (NGame.Instance is NGame game)
+        {
+            game.AddChild(dialog);
+        }
+        else
+        {
+            GetTree().Root.AddChild(dialog);
+        }
+    }
+
+    /// <summary>Replaces the carry draft with the imported (already clamped) config. The import never wrote the pending
+    /// store, so this stays consistent with the detached-draft rule: confirming/starting persists it, backing out drops it.
+    /// 用导入的（已收敛）配置替换携带草稿。导入从未写 pending store，因此仍符合草稿隔离规则：确认/开跑才落盘，返回则丢弃。</summary>
+    private void ApplyImportedCarry(CarryConfig applied)
+    {
+        _carry.Cards.Clear();
+        _carry.Cards.AddRange(applied.Cards);
+        _carry.Relics.Clear();
+        _carry.Relics.AddRange(applied.Relics);
+        _carry.Potions.Clear();
+        _carry.Potions.AddRange(applied.Potions);
+        _carryGold = applied.Gold;
+        _carry.Gold = applied.Gold;
+        Refresh();
+        Entry.Logger.Info($"WarehouseHub: applied imported carry ({_carry.Cards.Count}c/" +
+                          $"{_carry.Relics.Count}r/{_carry.Potions.Count}p/{_carry.Gold}g).");
     }
 
     // ----- Gold stepper (custom SpinBox replacement, fully themeable) -----
@@ -674,6 +766,9 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         bool canStart = CanProceed();
         _startButton.Disabled = !canStart;
         _startHintLabel.Visible = !canStart;
+
+        // An empty carry has nothing worth sharing as a gear code. 空携带没有值得分享的战备码。
+        _generateButton.Disabled = CarryIsEmpty;
 
         // Carried counts by item key (id-only), used to compute the available warehouse counts.
         var carriedCards = new Dictionary<string, int>();

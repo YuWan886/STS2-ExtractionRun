@@ -1,5 +1,6 @@
 using MegaCrit.Sts2.Core.Localization;
 using STS2RitsuLib.Settings;
+using ExtractionRun.Data;
 
 namespace ExtractionRun.UI;
 
@@ -97,6 +98,34 @@ public static class ExtractionLocalization
     public static string LimitPotionsText(int current, int max) => Formatted("EXTRACTION_RUN.limit.potions", current, max);
     public static string GoldWarehouseText(int gold) => Formatted("EXTRACTION_RUN.gold.warehouse", gold);
     public static string GoldCarryText(int gold) => Formatted("EXTRACTION_RUN.gold.carry", gold);
+
+    // ----- Gear code 战备码 -----
+
+    public static string CodeGenerateText() => Text("EXTRACTION_RUN.code.generate");
+    public static string CodeImportText() => Text("EXTRACTION_RUN.code.import");
+    public static string CodeTitleText() => Text("EXTRACTION_RUN.code.title");
+    public static string CodeInputPlaceholderText() => Text("EXTRACTION_RUN.code.input.placeholder");
+    public static string CodePreviewText() => Text("EXTRACTION_RUN.code.preview");
+    public static string CodePreviewEmptyText() => Text("EXTRACTION_RUN.code.preview.empty");
+    public static string CodeApplyText() => Text("EXTRACTION_RUN.code.apply");
+    public static string CodeImportableText(int cards, int relics, int potions, int gold) =>
+        Formatted("EXTRACTION_RUN.code.importable", cards, relics, potions, gold);
+    public static string CodeMissingText(int missing) => Formatted("EXTRACTION_RUN.code.missing", missing);
+    public static string CodeMissingModsText(string names) => Formatted("EXTRACTION_RUN.code.missingMods", names);
+    public static string CodeUnrecognizedText() => Text("EXTRACTION_RUN.code.unrecognized");
+    public static string CodeUnrecognizedListText(string entries) => Formatted("EXTRACTION_RUN.code.unrecognizedList", entries);
+    public static string CodeGoldClampedText(int gold, int balance) => Formatted("EXTRACTION_RUN.code.goldClamped", gold, balance);
+    public static string CodeNoneImportableText() => Text("EXTRACTION_RUN.code.noneImportable");
+    public static string CodeErrorText(CarryCodec.DecodeError error) => error switch
+    {
+        CarryCodec.DecodeError.Empty => Text("EXTRACTION_RUN.code.error.empty"),
+        CarryCodec.DecodeError.MissingChecksum => Text("EXTRACTION_RUN.code.error.checksum"),
+        CarryCodec.DecodeError.BadChecksum => Text("EXTRACTION_RUN.code.error.badChecksum"),
+        CarryCodec.DecodeError.BadSegment => Text("EXTRACTION_RUN.code.error.segment"),
+        CarryCodec.DecodeError.CountOverflow => Text("EXTRACTION_RUN.code.error.count"),
+        _ => string.Empty,
+    };
+    public static string CodeCopiedText() => Text("EXTRACTION_RUN.toast.codeCopied");
 
     // ----- Console confirm dialog 控制台确认弹窗 -----
 
