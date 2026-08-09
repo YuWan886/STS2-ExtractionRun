@@ -30,6 +30,7 @@ public static class ExtractionRunEnd
     {
         try
         {
+            CarriedPickupQueue.Reset();
 
             if (evt.Run.Modifiers.All(sm => sm.Id != ModelDb.Modifier<ExtractionModifier>().Id))
             {

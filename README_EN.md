@@ -40,6 +40,10 @@ On first use, the warehouse is seeded with all Basic and Common cards, all Start
 
 Settings are stored at global scope, shared across all saves.
 
+## Compatibility
+
+- **Hextech Runes mod**: the first-time warehouse seed does **not** grant that mod's relics.
+
 ## Debug Console Commands
 
 The in-game developer console provides these Search-Loot-Extract commands (local-only, independent of the settings page):

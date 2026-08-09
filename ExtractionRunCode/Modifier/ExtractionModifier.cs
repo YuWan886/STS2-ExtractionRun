@@ -23,6 +23,7 @@ public sealed class ExtractionModifier : ModifierModel
     protected override void AfterRunCreated(RunState runState)
     {
         ExtractionSettlement.Clear();
+        CarriedPickupQueue.Reset();
 
         foreach (Player player in runState.Players)
         {
@@ -102,6 +103,7 @@ public sealed class ExtractionModifier : ModifierModel
 
                 RelicModel relic = RelicModel.FromSerializable(sr);
                 player.AddRelicInternal(relic, silent: true);
+                CarriedPickupQueue.MarkCarried(relic);
             }
 
             int addedPotions = 0;
@@ -134,9 +136,9 @@ public sealed class ExtractionModifier : ModifierModel
                 Entry.Logger.Info($"ExtractionModifier consumed {myConfig.Cards.Count} cards, " +
                                   $"{myConfig.Relics.Count} relics, {myConfig.Potions.Count} potions, " +
                                   $"{myConfig.Gold} gold from the local warehouse.");
+                                  
+                PendingCarryStore.Clear();
             }
-
-            PendingCarryStore.Clear();
         }
     }
 

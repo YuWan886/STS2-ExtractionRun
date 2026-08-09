@@ -79,7 +79,9 @@ public static class WarehouseStore
         store.Save(DataKey);
     }
 
-    /// <summary>Grants the first-use seed into a warehouse (starter/common cards + relics + 1000 gold). 发放初始种子。</summary>
+    /// <summary>
+    /// Grants the first-use seed into a warehouse (starter/common cards + relics + 1000 gold). 发放初始种子。
+    /// </summary>
     private static void GrantInitialItems(WarehouseData data)
     {
         data.Gold = ClampGold(data.Gold + 1000);
@@ -92,14 +94,36 @@ public static class WarehouseStore
             data.Cards.Add(NormalizeCard(card.ToMutable().ToSerializable()));
         }
 
+        var excludedStems = new HashSet<string>(StringComparer.Ordinal);
         foreach (RelicModel relic in ModelDb.AllRelics
                      .Where(r => r.Rarity is RelicRarity.Starter or RelicRarity.Common)
                      .GroupBy(r => r.Id)
                      .Select(g => g.First()))
         {
+            string? stem = CarryCodeOwner.ResolveOwnerStem(CarryCodec.ItemKind.Relic, relic.Id);
+            if (stem != null && ExcludedSeedRelicStems.Contains(stem))
+            {
+                excludedStems.Add(stem);
+                continue;
+            }
+
             data.Relics.Add(NormalizeRelic(relic.ToMutable().ToSerializable()));
         }
+
+        if (excludedStems.Count > 0)
+        {
+            Entry.Logger.Info($"GrantInitialItems: excluded {excludedStems.Count} mod relic stem(s) from the seed " +
+                              $"(e.g. 海克斯符文): {string.Join(", ", excludedStems)}.");
+        }
     }
+
+    /// <summary>Owner-mod stems whose relics the first-use seed must not grant.
+    /// 首次种子不发放的归属 mod stem。</summary>
+    private static readonly IReadOnlySet<string> ExcludedSeedRelicStems = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "HEXTECH_RUNES",
+        "HEXTECHRUNES",
+    };
 
     /// <summary>
     /// One-shot legacy migration: warehouses written before the base-only change may hold upgraded / enchanted /
