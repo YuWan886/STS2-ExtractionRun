@@ -70,10 +70,13 @@ public sealed class WarehouseFilterState
     public List<string> CardRarities { get; set; } = new();
     public List<string> CardTypes { get; set; } = new();
     public List<string> CardCosts { get; set; } = new();
+    public List<string> CardSources { get; set; } = new();
 
     public List<string> RelicPools { get; set; } = new();
     public List<string> RelicRarities { get; set; } = new();
+    public List<string> RelicSources { get; set; } = new();
 
     public List<string> PotionPools { get; set; } = new();
     public List<string> PotionRarities { get; set; } = new();
+    public List<string> PotionSources { get; set; } = new();
 }

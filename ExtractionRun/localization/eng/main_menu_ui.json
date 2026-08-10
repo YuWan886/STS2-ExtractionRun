@@ -51,6 +51,9 @@
   "EXTRACTION_RUN.filter.rarity": "Rarity",
   "EXTRACTION_RUN.filter.type": "Type",
   "EXTRACTION_RUN.filter.cost": "Cost",
+  "EXTRACTION_RUN.filter.source": "Source",
+  "EXTRACTION_RUN.filter.source.base": "Vanilla",
+  "EXTRACTION_RUN.filter.source.unknown": "Unknown",
   "EXTRACTION_RUN.filter.all": "All",
   "EXTRACTION_RUN.filter.clear": "Clear",
 
@@ -88,6 +91,7 @@
   "EXTRACTION_RUN.settlement.cards": "Cards deposited {0}",
   "EXTRACTION_RUN.settlement.relics": "Relics deposited {0}",
   "EXTRACTION_RUN.settlement.potions": "Potions deposited {0}",
+  "EXTRACTION_RUN.settlement.expiredRelics": "Not extracted: {0} spent relic(s)",
   "EXTRACTION_RUN.settlement.lost.cards": "Cards lost {0}",
   "EXTRACTION_RUN.settlement.lost.relics": "Relics lost {0}",
   "EXTRACTION_RUN.settlement.lost.potions": "Potions lost {0}",

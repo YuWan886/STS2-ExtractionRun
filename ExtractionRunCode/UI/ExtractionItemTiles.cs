@@ -1,4 +1,5 @@
 using Godot;
+using ExtractionRun.Data;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Potions;
 using MegaCrit.Sts2.Core.Entities.Relics;
@@ -54,13 +55,14 @@ public static class ExtractionItemTiles
     // ----- Grouped variety metadata (each group = one base item kind) -----
 
     public sealed record CardGroup(SerializableCard Rep, string Name, string Pool, int Count, Texture2D? Texture,
-        CardRarity Rarity, CardType Type, CostBucket Cost, string PoolSlug, string PortraitPath, string Haystack);
+        CardRarity Rarity, CardType Type, CostBucket Cost, string PoolSlug, string PortraitPath, string Haystack,
+        ContentSource Source);
 
     public sealed record RelicGroup(SerializableRelic Rep, string Name, string Pool, int Count, Texture2D? Texture,
-        RelicRarity Rarity, string PoolSlug, string IconPath, string Haystack);
+        RelicRarity Rarity, string PoolSlug, string IconPath, string Haystack, ContentSource Source);
 
     public sealed record PotionGroup(SerializablePotion Rep, string Name, string Pool, int Count, Texture2D? Texture,
-        PotionRarity Rarity, string PoolSlug, string ImagePath, string Haystack);
+        PotionRarity Rarity, string PoolSlug, string ImagePath, string Haystack, ContentSource Source);
 
     // ----- Canonical source-pool display order (by slug; language-independent) -----
 
@@ -184,10 +186,12 @@ public static class ExtractionItemTiles
     private static CardGroup BuildCardGroup(SerializableCard rep, int count, bool loadArt)
     {
         CardModel? card = rep.Id == null ? null : ModelDb.GetByIdOrNull<CardModel>(rep.Id);
+        ContentSource source = rep.Id == null ? ContentSource.Unknown
+            : CarryCodeOwner.ResolveSource(CarryCodec.ItemKind.Card, rep.Id);
         string name = card?.Title ?? rep.Id?.ToString() ?? "?";
         string poolSlug = CardPoolSlug(rep.Id);
         string pool = CardPoolName(rep.Id);
-        string haystack = string.Join(' ', name, pool, poolSlug, rep.Id?.ToString() ?? "").ToLowerInvariant();
+        string haystack = SearchHaystack(name, pool, poolSlug, rep.Id, source);
 
         // Identity cards (MadScience) keep their tinker type/rider in Props — restore them so the tile's type, art and
         // cost reflect the real card instead of the degenerate base model (whose Type is None). Other cards have no
@@ -215,37 +219,60 @@ public static class ExtractionItemTiles
             CardCostBucket(display),
             poolSlug,
             display?.PortraitPath ?? "",
-            haystack);
+            haystack,
+            source);
     }
 
     private static RelicGroup BuildRelicGroup(SerializableRelic rep, int count, bool loadArt)
     {
         RelicModel? relic = rep.Id == null ? null : ModelDb.GetByIdOrNull<RelicModel>(rep.Id);
+        ContentSource source = rep.Id == null ? ContentSource.Unknown
+            : CarryCodeOwner.ResolveSource(CarryCodec.ItemKind.Relic, rep.Id);
         string name = relic?.Title.GetFormattedText() ?? rep.Id?.ToString() ?? "?";
         string poolSlug = RelicPoolSlug(rep.Id);
         string pool = RelicPoolName(rep.Id);
-        string haystack = string.Join(' ', name, pool, poolSlug, rep.Id?.ToString() ?? "").ToLowerInvariant();
+        string haystack = SearchHaystack(name, pool, poolSlug, rep.Id, source);
         return new RelicGroup(rep, name, pool, count,
             loadArt ? RelicTexture(rep.Id) : null,
             relic?.Rarity ?? RelicRarity.None,
             poolSlug,
             relic?.IconPath ?? "",
-            haystack);
+            haystack,
+            source);
     }
 
     private static PotionGroup BuildPotionGroup(SerializablePotion rep, int count, bool loadArt)
     {
         PotionModel? potion = rep.Id == null ? null : ModelDb.GetByIdOrNull<PotionModel>(rep.Id);
+        ContentSource source = rep.Id == null ? ContentSource.Unknown
+            : CarryCodeOwner.ResolveSource(CarryCodec.ItemKind.Potion, rep.Id);
         string name = potion?.Title.GetFormattedText() ?? rep.Id?.ToString() ?? "?";
         string poolSlug = PotionPoolSlug(rep.Id);
         string pool = PotionPoolName(rep.Id);
-        string haystack = string.Join(' ', name, pool, poolSlug, rep.Id?.ToString() ?? "").ToLowerInvariant();
+        string haystack = SearchHaystack(name, pool, poolSlug, rep.Id, source);
         return new PotionGroup(rep, name, pool, count,
             loadArt ? PotionTexture(rep.Id) : null,
             potion?.Rarity ?? PotionRarity.None,
             poolSlug,
             potion?.ImagePath ?? "",
-            haystack);
+            haystack,
+            source);
+    }
+
+    /// <summary>
+    /// Search haystack for a group: base name + pool display name + pool slug + model id, plus — for mod items — the
+    /// owning mod's display name and stem (free search-by-mod across languages, matching the id/pool-slug rationale).
+    /// 分组搜索堆：基础名称 + 池显示名 + 池 slug + 模型 id；mod 物品再加归属 mod 的显示名与 stem（跨语言按 mod 搜索）。
+    /// </summary>
+    private static string SearchHaystack(string name, string pool, string poolSlug, ModelId? id, ContentSource source)
+    {
+        string basePart = string.Join(' ', name, pool, poolSlug, id?.ToString() ?? "");
+        if (source.IsMod && source.ModStem is string stem)
+        {
+            basePart += " " + CarryCodeOwner.ResolveModDisplayName(stem) + " " + stem;
+        }
+
+        return basePart.ToLowerInvariant();
     }
 
     /// <summary>

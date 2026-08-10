@@ -163,6 +163,17 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
                 : ExtractionLocalization.SettlementLostRelicsText(_result.Relics.Count),
             ExtractionItemTiles.GroupRelics(_result.Relics).Select(g => (g.Name, g.Pool, g.Count, g.Texture, g.Rep.Id))));
 
+        // Expired relics (used up / melted) were dropped on extraction — list them for info, never deposited.
+        // 失效遗物（用尽/融化）撤离时已丢弃，仅在此提示展示，不入库。
+        if (success && _result.ExpiredRelics.Count > 0)
+        {
+            body.AddChild(new HSeparator());
+
+            body.AddChild(BuildSection(
+                ExtractionLocalization.SettlementExpiredRelicsText(_result.ExpiredRelics.Count),
+                ExtractionItemTiles.GroupRelics(_result.ExpiredRelics).Select(g => (g.Name, g.Pool, g.Count, g.Texture, g.Rep.Id))));
+        }
+
         body.AddChild(new HSeparator());
 
         body.AddChild(BuildSection(

@@ -59,10 +59,13 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         CardRarities,
         CardTypes,
         CardCosts,
+        CardSources,
         RelicPools,
         RelicRarities,
+        RelicSources,
         PotionPools,
         PotionRarities,
+        PotionSources,
     }
 
     private readonly NSubmenuStack _stack;
@@ -377,17 +380,19 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
 
     private Control BuildCardFilterArea()
     {
-        // One row, content-width buttons (adaptive to the four card filters), left-aligned. 一行四个紧凑按钮（自适应过滤项）。
+        // One row, content-width buttons (adaptive to the five card filters), left-aligned. 一行五个紧凑按钮（自适应过滤项）。
         var row = new HBoxContainer();
         row.AddThemeConstantOverride("separation", 8);
         _filters[FilterKind.CardPools] = MakeFilterDropdown(ExtractionLocalization.FilterPoolText());
         _filters[FilterKind.CardRarities] = MakeFilterDropdown(ExtractionLocalization.FilterRarityText());
         _filters[FilterKind.CardTypes] = MakeFilterDropdown(ExtractionLocalization.FilterTypeText());
         _filters[FilterKind.CardCosts] = MakeFilterDropdown(ExtractionLocalization.FilterCostText());
+        _filters[FilterKind.CardSources] = MakeFilterDropdown(ExtractionLocalization.FilterSourceText());
         row.AddChild(_filters[FilterKind.CardPools]);
         row.AddChild(_filters[FilterKind.CardRarities]);
         row.AddChild(_filters[FilterKind.CardTypes]);
         row.AddChild(_filters[FilterKind.CardCosts]);
+        row.AddChild(_filters[FilterKind.CardSources]);
         return row;
     }
 
@@ -397,8 +402,10 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         row.AddThemeConstantOverride("separation", 8);
         _filters[FilterKind.RelicPools] = MakeFilterDropdown(ExtractionLocalization.FilterPoolText());
         _filters[FilterKind.RelicRarities] = MakeFilterDropdown(ExtractionLocalization.FilterRarityText());
+        _filters[FilterKind.RelicSources] = MakeFilterDropdown(ExtractionLocalization.FilterSourceText());
         row.AddChild(_filters[FilterKind.RelicPools]);
         row.AddChild(_filters[FilterKind.RelicRarities]);
+        row.AddChild(_filters[FilterKind.RelicSources]);
         return row;
     }
 
@@ -408,8 +415,10 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         row.AddThemeConstantOverride("separation", 8);
         _filters[FilterKind.PotionPools] = MakeFilterDropdown(ExtractionLocalization.FilterPoolText());
         _filters[FilterKind.PotionRarities] = MakeFilterDropdown(ExtractionLocalization.FilterRarityText());
+        _filters[FilterKind.PotionSources] = MakeFilterDropdown(ExtractionLocalization.FilterSourceText());
         row.AddChild(_filters[FilterKind.PotionPools]);
         row.AddChild(_filters[FilterKind.PotionRarities]);
+        row.AddChild(_filters[FilterKind.PotionSources]);
         return row;
     }
 
@@ -918,12 +927,15 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         SetFilterOptions(_filters[FilterKind.CardCosts],
             varieties.Select(g => g.Cost).Distinct().OrderBy(c => (int)c).Select(c => c.ToString()).ToList(),
             _warehouse.Filters.CardCosts, ExtractionLocalization.FilterCostLabel);
+        SetFilterOptions(_filters[FilterKind.CardSources],
+            OrderSourceKeys(varieties.Select(g => g.Source.SourceKey)),
+            _warehouse.Filters.CardSources, ExtractionLocalization.FilterSourceLabel);
 
         List<VirtualizedItemGrid.RenderData> rows = BuildCardRows(varieties, carried);
         _grids[(int)Tab.Cards].SetItems(rows);
         UpdateTabHints(Tab.Cards, rows.Count, varieties.Count == 0, IsFilterActive(FilterKind.CardPools)
             || IsFilterActive(FilterKind.CardRarities) || IsFilterActive(FilterKind.CardTypes)
-            || IsFilterActive(FilterKind.CardCosts));
+            || IsFilterActive(FilterKind.CardCosts) || IsFilterActive(FilterKind.CardSources));
     }
 
     private void UpdateRelicsTab(Dictionary<string, int> carried)
@@ -936,11 +948,15 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         SetFilterOptions(_filters[FilterKind.RelicRarities],
             varieties.Select(g => g.Rarity).Distinct().OrderBy(r => (int)r).Select(r => r.ToString()).ToList(),
             _warehouse.Filters.RelicRarities, ExtractionLocalization.FilterRarityLabel);
+        SetFilterOptions(_filters[FilterKind.RelicSources],
+            OrderSourceKeys(varieties.Select(g => g.Source.SourceKey)),
+            _warehouse.Filters.RelicSources, ExtractionLocalization.FilterSourceLabel);
 
         List<VirtualizedItemGrid.RenderData> rows = BuildRelicRows(varieties, carried);
         _grids[(int)Tab.Relics].SetItems(rows);
         UpdateTabHints(Tab.Relics, rows.Count, varieties.Count == 0,
-            IsFilterActive(FilterKind.RelicPools) || IsFilterActive(FilterKind.RelicRarities));
+            IsFilterActive(FilterKind.RelicPools) || IsFilterActive(FilterKind.RelicRarities)
+            || IsFilterActive(FilterKind.RelicSources));
     }
 
     private void UpdatePotionsTab(Dictionary<string, int> carried)
@@ -953,11 +969,15 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         SetFilterOptions(_filters[FilterKind.PotionRarities],
             varieties.Select(g => g.Rarity).Distinct().OrderBy(r => (int)r).Select(r => r.ToString()).ToList(),
             _warehouse.Filters.PotionRarities, ExtractionLocalization.FilterRarityLabel);
+        SetFilterOptions(_filters[FilterKind.PotionSources],
+            OrderSourceKeys(varieties.Select(g => g.Source.SourceKey)),
+            _warehouse.Filters.PotionSources, ExtractionLocalization.FilterSourceLabel);
 
         List<VirtualizedItemGrid.RenderData> rows = BuildPotionRows(varieties, carried);
         _grids[(int)Tab.Potions].SetItems(rows);
         UpdateTabHints(Tab.Potions, rows.Count, varieties.Count == 0,
-            IsFilterActive(FilterKind.PotionPools) || IsFilterActive(FilterKind.PotionRarities));
+            IsFilterActive(FilterKind.PotionPools) || IsFilterActive(FilterKind.PotionRarities)
+            || IsFilterActive(FilterKind.PotionSources));
     }
 
     private List<VirtualizedItemGrid.RenderData> BuildCardRows(
@@ -968,10 +988,12 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         List<string> selRarities = _warehouse.Filters.CardRarities;
         List<string> selTypes = _warehouse.Filters.CardTypes;
         List<string> selCosts = _warehouse.Filters.CardCosts;
+        List<string> selSources = _warehouse.Filters.CardSources;
         bool poolOn = selPools.Count > 0;
         bool rarityOn = selRarities.Count > 0;
         bool typeOn = selTypes.Count > 0;
         bool costOn = selCosts.Count > 0;
+        bool sourceOn = selSources.Count > 0;
         string query = _query;
 
         int filtered = 0;
@@ -991,7 +1013,8 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
             if ((poolOn && !selPools.Contains(g.PoolSlug))
                 || (rarityOn && !selRarities.Contains(g.Rarity.ToString()))
                 || (typeOn && !selTypes.Contains(g.Type.ToString()))
-                || (costOn && !selCosts.Contains(g.Cost.ToString())))
+                || (costOn && !selCosts.Contains(g.Cost.ToString()))
+                || (sourceOn && !selSources.Contains(g.Source.SourceKey)))
             {
                 continue;
             }
@@ -1018,8 +1041,10 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         var rows = new List<VirtualizedItemGrid.RenderData>();
         List<string> selPools = _warehouse.Filters.RelicPools;
         List<string> selRarities = _warehouse.Filters.RelicRarities;
+        List<string> selSources = _warehouse.Filters.RelicSources;
         bool poolOn = selPools.Count > 0;
         bool rarityOn = selRarities.Count > 0;
+        bool sourceOn = selSources.Count > 0;
         string query = _query;
 
         int filtered = 0;
@@ -1037,7 +1062,8 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
             }
 
             if ((poolOn && !selPools.Contains(g.PoolSlug))
-                || (rarityOn && !selRarities.Contains(g.Rarity.ToString())))
+                || (rarityOn && !selRarities.Contains(g.Rarity.ToString()))
+                || (sourceOn && !selSources.Contains(g.Source.SourceKey)))
             {
                 continue;
             }
@@ -1064,8 +1090,10 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         var rows = new List<VirtualizedItemGrid.RenderData>();
         List<string> selPools = _warehouse.Filters.PotionPools;
         List<string> selRarities = _warehouse.Filters.PotionRarities;
+        List<string> selSources = _warehouse.Filters.PotionSources;
         bool poolOn = selPools.Count > 0;
         bool rarityOn = selRarities.Count > 0;
+        bool sourceOn = selSources.Count > 0;
         string query = _query;
 
         int filtered = 0;
@@ -1083,7 +1111,8 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
             }
 
             if ((poolOn && !selPools.Contains(g.PoolSlug))
-                || (rarityOn && !selRarities.Contains(g.Rarity.ToString())))
+                || (rarityOn && !selRarities.Contains(g.Rarity.ToString()))
+                || (sourceOn && !selSources.Contains(g.Source.SourceKey)))
             {
                 continue;
             }
@@ -1109,6 +1138,23 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     {
         dropdown.SetOptions(values.Select(v => (v, label(v))));
         dropdown.SetSelected(persisted);
+    }
+
+    /// <summary>
+    /// Content-source filter options in canonical order: 原版 first, then mods by display name, 未知 last. 内容来源过滤
+    /// 选项规范序：原版 → mods（按显示名）→ 未知。
+    /// </summary>
+    private static List<string> OrderSourceKeys(IEnumerable<string> keys)
+    {
+        var present = keys.Where(k => k.Length > 0).Distinct().ToList();
+        List<string> mods = present
+            .Where(k => k != ContentSource.BaseKey && k != ContentSource.UnknownKey)
+            .OrderBy(k => ExtractionLocalization.FilterSourceLabel(k), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return new[] { ContentSource.BaseKey }.Where(present.Contains)
+            .Concat(mods)
+            .Concat(new[] { ContentSource.UnknownKey }.Where(present.Contains))
+            .ToList();
     }
 
     private bool IsFilterActive(FilterKind kind) => _filters[kind].Selected.Count > 0;
@@ -1213,10 +1259,13 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         _warehouse.Filters.CardRarities = _filters[FilterKind.CardRarities].Selected.ToList();
         _warehouse.Filters.CardTypes = _filters[FilterKind.CardTypes].Selected.ToList();
         _warehouse.Filters.CardCosts = _filters[FilterKind.CardCosts].Selected.ToList();
+        _warehouse.Filters.CardSources = _filters[FilterKind.CardSources].Selected.ToList();
         _warehouse.Filters.RelicPools = _filters[FilterKind.RelicPools].Selected.ToList();
         _warehouse.Filters.RelicRarities = _filters[FilterKind.RelicRarities].Selected.ToList();
+        _warehouse.Filters.RelicSources = _filters[FilterKind.RelicSources].Selected.ToList();
         _warehouse.Filters.PotionPools = _filters[FilterKind.PotionPools].Selected.ToList();
         _warehouse.Filters.PotionRarities = _filters[FilterKind.PotionRarities].Selected.ToList();
+        _warehouse.Filters.PotionSources = _filters[FilterKind.PotionSources].Selected.ToList();
     }
 
     private void StartRun()

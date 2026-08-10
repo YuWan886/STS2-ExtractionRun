@@ -20,6 +20,12 @@ public sealed class ExtractionSettlementResult
 
     public List<SerializableRelic> Relics { get; set; } = new();
 
+    /// <summary>
+    /// Expired relics (used up / melted) that were NOT deposited — dropped on extraction and only shown for info.
+    /// Success only. 失效遗物（用尽/融化），撤离时丢弃、不入库，仅在结算屏提示展示。仅成功时有值。
+    /// </summary>
+    public List<SerializableRelic> ExpiredRelics { get; set; } = new();
+
     public List<SerializablePotion> Potions { get; set; } = new();
 
     /// <summary>Gold shown by the settlement screen (deposited on success, lost on failure). 结算展示的金币。</summary>

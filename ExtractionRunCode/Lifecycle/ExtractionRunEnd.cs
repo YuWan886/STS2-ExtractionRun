@@ -78,7 +78,14 @@ public static class ExtractionRunEnd
                 {
                     try
                     {
-                        relics.Add(r.ToSerializable());
+                        if (IsExpiredRelic(r))
+                        {
+                            result.ExpiredRelics.Add(r.ToSerializable());
+                        }
+                        else
+                        {
+                            relics.Add(r.ToSerializable());
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -118,7 +125,7 @@ public static class ExtractionRunEnd
                 result.Cards.AddRange(rewardCards);
                 result.Relics.AddRange(rewardRelics);
                 Entry.Logger.Info($"ExtractionRun: extracted {cards.Count} cards, {relics.Count} relics, " +
-                                  $"{potions.Count} potions, {gold} gold.");
+                                  $"{potions.Count} potions, {gold} gold; dropped {result.ExpiredRelics.Count} spent relic(s).");
                 RitsuToastService.ShowInfo(ExtractionLocalization.DepositSuccessText());
             }
             else
@@ -137,6 +144,24 @@ public static class ExtractionRunEnd
         catch (Exception ex)
         {
             Entry.Logger.Error($"ExtractionRunEnd: deposit failed: {ex}");
+        }
+    }
+
+    /// <summary>
+    /// A relic is expired (dropped, not carried out) if it's a limited-use relic whose uses are all spent
+    /// (<c>IsUsedUp</c>), or a melted wax relic (<c>IsMelted</c>). An unreadable expiry counts as NOT expired —
+    /// a valid relic is never dropped because the check threw.
+    /// 失效判定：次数用尽的有限次遗物（IsUsedUp），或融化的蜡质遗物（IsMelted）。判定抛异常按有效处理——绝不因判断失败丢掉有效遗物。
+    /// </summary>
+    private static bool IsExpiredRelic(RelicModel r)
+    {
+        try
+        {
+            return r.IsUsedUp || r.IsMelted;
+        }
+        catch (Exception)
+        {
+            return false;
         }
     }
 }

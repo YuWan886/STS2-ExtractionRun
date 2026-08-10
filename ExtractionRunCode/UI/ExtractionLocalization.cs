@@ -102,6 +102,7 @@ public static class ExtractionLocalization
     public static string FilterRarityText() => Text("EXTRACTION_RUN.filter.rarity");
     public static string FilterTypeText() => Text("EXTRACTION_RUN.filter.type");
     public static string FilterCostText() => Text("EXTRACTION_RUN.filter.cost");
+    public static string FilterSourceText() => Text("EXTRACTION_RUN.filter.source");
     public static string FilterAllText() => Text("EXTRACTION_RUN.filter.all");
     public static string FilterClearText() => Text("EXTRACTION_RUN.filter.clear");
 
@@ -113,6 +114,18 @@ public static class ExtractionLocalization
 
     /// <summary>Localized label for a cost-bucket option. 费用桶选项的本地化标签。</summary>
     public static string FilterCostLabel(string slug) => DynamicText("EXTRACTION_RUN.filter.cost." + slug.ToLowerInvariant(), slug);
+
+    /// <summary>
+    /// Localized label for a content-source option: 原版 / 未知 via loc keys, any other key (a mod's normalized stem)
+    /// resolves to the loaded mod's manifest display name. 内容来源选项的本地化标签：原版/未知走 loc 键，其余（mod 规范化 stem）
+    /// 解析为已加载 mod 的清单显示名。
+    /// </summary>
+    public static string FilterSourceLabel(string key) => key switch
+    {
+        ContentSource.BaseKey => Text("EXTRACTION_RUN.filter.source.base"),
+        ContentSource.UnknownKey => Text("EXTRACTION_RUN.filter.source.unknown"),
+        _ => CarryCodeOwner.ResolveModDisplayName(key),
+    };
 
     public static string LimitCardsText(int current, int max) => Formatted("EXTRACTION_RUN.limit.cards", current, max);
     public static string LimitRelicsText(int current, int max) => Formatted("EXTRACTION_RUN.limit.relics", current, max);
@@ -165,6 +178,7 @@ public static class ExtractionLocalization
     public static string SettlementCardsText(int count) => Formatted("EXTRACTION_RUN.settlement.cards", count);
     public static string SettlementRelicsText(int count) => Formatted("EXTRACTION_RUN.settlement.relics", count);
     public static string SettlementPotionsText(int count) => Formatted("EXTRACTION_RUN.settlement.potions", count);
+    public static string SettlementExpiredRelicsText(int count) => Formatted("EXTRACTION_RUN.settlement.expiredRelics", count);
     public static string SettlementLostCardsText(int count) => Formatted("EXTRACTION_RUN.settlement.lost.cards", count);
     public static string SettlementLostRelicsText(int count) => Formatted("EXTRACTION_RUN.settlement.lost.relics", count);
     public static string SettlementLostPotionsText(int count) => Formatted("EXTRACTION_RUN.settlement.lost.potions", count);

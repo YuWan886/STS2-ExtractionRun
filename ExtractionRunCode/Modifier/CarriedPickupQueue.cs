@@ -15,11 +15,16 @@ namespace ExtractionRun.Modifier;
 /// <see cref="RunManager.FinalizeStartingRelics"/> — before <c>NRun</c> is created — so any carried relic whose pickup
 /// opens a selection screen (e.g. 海克斯符文 forge-grant / transmute runes awaiting <see cref="NOverlayStack"/>) stalls run
 /// start. Deferring the pickup to after the overlay stack exists keeps the pickup benefit while making run start safe.
+/// The drain additionally waits for the run's initial act entry (EnterAct act 0) to complete, not just the overlay
+/// stack: act-0 entry runs the Neow full-heal (AncientEventModel sets the player to 0 HP then heals to full), so a
+/// pickup that costs HP (e.g. FragrantMushroom's 15 HP) would otherwise have its damage silently erased by that heal.
 /// The queue is process-local: every machine marks and drains its own injected instances, so the MP choice protocol
 /// (which syncs who picked what) is unaffected.
 /// 携带遗物（ExtractionModifier 注入）的“拾起时”效果推迟到跑局场景就绪后再执行。原版 FinalizeStartingRelics 会在 NRun
 /// 创建之前对背包内每件遗物调用 AfterObtained，任何拾起时打开选择界面的携带遗物（如海克斯锻造/转换符文等待 NOverlayStack）
-/// 都会卡死开局。推迟到叠层就绪既保留拾取收益又不卡开局。队列进程内唯一：每台机器只标记/排空自己注入的实例，
+/// 都会卡死开局。推迟到叠层就绪既保留拾取收益又不卡开局。排空还要等到首幕入场（EnterAct act 0）完成后才执行：
+/// 首幕入场会触发 Neow 满血回复（先把玩家血量归零再回满），否则带生命值代价的拾起（如 FragrantMushroom 扣 15 血）
+/// 会在这段回复中被静默抹掉。队列进程内唯一：每台机器只标记/排空自己注入的实例，
 /// 联机选择协议不受影响。
 /// </summary>
 public static class CarriedPickupQueue
@@ -27,6 +32,11 @@ public static class CarriedPickupQueue
     private static readonly AttachedState<RelicModel, bool> Carried = new(() => false);
     private static readonly List<(RunState Run, RelicModel Relic)> Pending = new();
     private static CancellationTokenSource? _drainCts;
+
+    /// <summary>The run whose initial act entry (and thus the Neow full-heal, if any) has completed. Pickups are held
+    /// until this matches the draining run. Bound to the RunState so a stale signal from a previous run can't release a
+    /// new run's drain early.</summary>
+    private static RunState? _settledRun;
 
     /// <summary>True when the relic was injected as a carry (its pickup must be deferred). 是否为携带注入的遗物。</summary>
     public static bool IsCarried(RelicModel relic) => Carried.TryGetValue(relic, out bool carried) && carried;
@@ -41,6 +51,7 @@ public static class CarriedPickupQueue
         _drainCts?.Cancel();
         _drainCts = null;
         Pending.Clear();
+        _settledRun = null;
     }
 
     private static void Enqueue(RunState runState, RelicModel relic) => Pending.Add((runState, relic));
@@ -57,12 +68,14 @@ public static class CarriedPickupQueue
         return run != null && run.GlobalUi != null && run.GlobalUi.Overlays != null;
     }
 
+    private static bool IsRunSettled(RunState runState) => ReferenceEquals(_settledRun, runState);
+
     private static async Task DrainAsync(RunState runState)
     {
         CancellationTokenSource cts = _drainCts = new CancellationTokenSource();
         try
         {
-            while (!IsOverlayReady())
+            while (!IsOverlayReady() || !IsRunSettled(runState))
             {
                 cts.Token.ThrowIfCancellationRequested();
                 if (!IsRunCurrent(runState))
@@ -187,6 +200,28 @@ public static class CarriedPickupQueue
             {
                 _ = DrainAsync(state);
             }
+        }
+    }
+
+    /// <summary>Signals the <see cref="DrainAsync"/> wait loop once the initial act (act 0) is entered, so pickups run
+    /// after the start-of-run state is final. Without this, a carried relic that costs HP (e.g. FragrantMushroom) has
+    /// its pickup damage silently erased by the Neow full-heal that runs on act-0 entry. The continuation resumes on
+    /// the main thread through the engine sync context, same as the frame-wait helper.</summary>
+    [HarmonyPatch(typeof(RunManager), nameof(RunManager.EnterAct))]
+    private static class EnterActPatch
+    {
+        private static void Postfix(int currentActIndex, Task __result, RunManager __instance)
+        {
+            if (currentActIndex == 0 && Pending.Count > 0)
+            {
+                _ = MarkSettledAsync(__result, __instance.State);
+            }
+        }
+
+        private static async Task MarkSettledAsync(Task enterActTask, RunState? runState)
+        {
+            await enterActTask;
+            _settledRun = runState;
         }
     }
 }

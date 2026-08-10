@@ -51,6 +51,9 @@
   "EXTRACTION_RUN.filter.rarity": "稀有度",
   "EXTRACTION_RUN.filter.type": "类型",
   "EXTRACTION_RUN.filter.cost": "费用",
+  "EXTRACTION_RUN.filter.source": "内容来源",
+  "EXTRACTION_RUN.filter.source.base": "原版",
+  "EXTRACTION_RUN.filter.source.unknown": "未知",
   "EXTRACTION_RUN.filter.all": "全部",
   "EXTRACTION_RUN.filter.clear": "清除",
 
@@ -88,6 +91,7 @@
   "EXTRACTION_RUN.settlement.cards": "存入卡牌 {0}",
   "EXTRACTION_RUN.settlement.relics": "存入遗物 {0}",
   "EXTRACTION_RUN.settlement.potions": "存入药水 {0}",
+  "EXTRACTION_RUN.settlement.expiredRelics": "未带出：失效遗物 {0}",
   "EXTRACTION_RUN.settlement.lost.cards": "损失卡牌 {0}",
   "EXTRACTION_RUN.settlement.lost.relics": "损失遗物 {0}",
   "EXTRACTION_RUN.settlement.lost.potions": "损失药水 {0}",
