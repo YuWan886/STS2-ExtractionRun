@@ -19,6 +19,11 @@
   "EXTRACTION_RUN.limit.potions": "携带药水 {0}/{1}",
   "EXTRACTION_RUN.gold.warehouse": "仓库金币：{0}",
   "EXTRACTION_RUN.gold.carry": "携带金币：{0}",
+  "EXTRACTION_RUN.seed.label": "种子",
+  "EXTRACTION_RUN.seed.placeholder": "留空=随机",
+
+  "EXTRACTION_RUN.durability.badge": "耐久 {0}",
+  "EXTRACTION_RUN.durability.broken": "耗尽",
 
   "EXTRACTION_RUN.code.generate": "生成战备码",
   "EXTRACTION_RUN.code.import": "导入战备码",
@@ -92,6 +97,8 @@
   "EXTRACTION_RUN.settlement.relics": "存入遗物 {0}",
   "EXTRACTION_RUN.settlement.potions": "存入药水 {0}",
   "EXTRACTION_RUN.settlement.expiredRelics": "未带出：失效遗物 {0}",
+  "EXTRACTION_RUN.settlement.brokenCards": "战损卡牌 {0}",
+  "EXTRACTION_RUN.settlement.brokenRelics": "战损遗物 {0}",
   "EXTRACTION_RUN.settlement.lost.cards": "损失卡牌 {0}",
   "EXTRACTION_RUN.settlement.lost.relics": "损失遗物 {0}",
   "EXTRACTION_RUN.settlement.lost.potions": "损失药水 {0}",
@@ -137,6 +144,11 @@
   "EXTRACTION_RUN.confirm.reset.body": "确定要重置仓库吗？将清空全部卡牌、遗物、药水与金币，重新发放初始物品，并清空已配置的携带。",
   "EXTRACTION_RUN.confirm.confirm": "确定",
   "EXTRACTION_RUN.confirm.cancel": "取消",
+  "EXTRACTION_RUN.durability.enable.header": "开启耐久",
+  "EXTRACTION_RUN.durability.enable.body": "开启耐久后，将放弃无耐久模式下的所有进度，使用之前保存的耐久仓库。此操作不可逆。",
+  "EXTRACTION_RUN.durability.disable.header": "关闭耐久",
+  "EXTRACTION_RUN.durability.disable.body": "关闭耐久后，当前耐久仓库将被冻结并复制为无耐久版本；重新开启时回到冻结前的仓库。",
+  "EXTRACTION_RUN.durability.blocked": "跑局或大厅进行中无法切换耐久模式。",
 
   "EXTRACTION_RUN.toast.deposit": "撤离成功！战利品已存入仓库。",
   "EXTRACTION_RUN.toast.firstSeed": "已为仓库发放初始与普通卡牌、遗物及 1000 金币。"

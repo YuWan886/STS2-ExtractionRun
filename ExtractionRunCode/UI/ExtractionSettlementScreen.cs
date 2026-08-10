@@ -1,5 +1,6 @@
 using Godot;
 using MegaCrit.Sts2.Core.Models;
+using ExtractionRun.Data;
 using ExtractionRun.Lifecycle;
 
 namespace ExtractionRun.UI;
@@ -148,12 +149,14 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
         scroll.AddChild(body);
 
         bool success = _result.Success;
+        bool showDurability = WarehouseStore.IsDurabilityEnabled;
 
         body.AddChild(BuildSection(
             success
                 ? ExtractionLocalization.SettlementCardsText(_result.Cards.Count)
                 : ExtractionLocalization.SettlementLostCardsText(_result.Cards.Count),
-            ExtractionItemTiles.GroupCards(_result.Cards).Select(g => (g.Name, g.Pool, g.Count, g.Texture, g.Rep.Id))));
+            ExtractionItemTiles.GroupCards(_result.Cards)
+                .Select(g => (g.Name, g.Pool, g.Count, g.Texture, g.Rep.Id, showDurability ? g.Durability : (int?)null))));
 
         body.AddChild(new HSeparator());
 
@@ -161,7 +164,8 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
             success
                 ? ExtractionLocalization.SettlementRelicsText(_result.Relics.Count)
                 : ExtractionLocalization.SettlementLostRelicsText(_result.Relics.Count),
-            ExtractionItemTiles.GroupRelics(_result.Relics).Select(g => (g.Name, g.Pool, g.Count, g.Texture, g.Rep.Id))));
+            ExtractionItemTiles.GroupRelics(_result.Relics)
+                .Select(g => (g.Name, g.Pool, g.Count, g.Texture, g.Rep.Id, showDurability ? g.Durability : (int?)null))));
 
         // Expired relics (used up / melted) were dropped on extraction — list them for info, never deposited.
         // 失效遗物（用尽/融化）撤离时已丢弃，仅在此提示展示，不入库。
@@ -171,7 +175,32 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
 
             body.AddChild(BuildSection(
                 ExtractionLocalization.SettlementExpiredRelicsText(_result.ExpiredRelics.Count),
-                ExtractionItemTiles.GroupRelics(_result.ExpiredRelics).Select(g => (g.Name, g.Pool, g.Count, g.Texture, g.Rep.Id))));
+                ExtractionItemTiles.GroupRelics(
+                    _result.ExpiredRelics.Select(sr => new WarehouseRelic { Relic = sr }).ToList())
+                    .Select(g => (g.Name, g.Pool, g.Count, g.Texture, g.Rep.Id, (int?)null))));
+        }
+
+        // Copies that broke on extraction (carried at durability 1 → 0) — 战损, shown as red "Broken" tiles. Only
+        // meaningful while durability is ON (OFF mode never decrements). 撤离时耐久耗尽（携带 1 → 0）的副本——战损，以红色
+        // 「耗尽」角标展示。仅在耐久开启时有意义（OFF 模式不递减）。
+        if (success && showDurability && _result.BrokenCards.Count > 0)
+        {
+            body.AddChild(new HSeparator());
+
+            body.AddChild(BuildSection(
+                ExtractionLocalization.SettlementBrokenCardsText(_result.BrokenCards.Count),
+                ExtractionItemTiles.GroupCards(_result.BrokenCards)
+                    .Select(g => (g.Name, g.Pool, g.Count, g.Texture, g.Rep.Id, (int?)0))));
+        }
+
+        if (success && showDurability && _result.BrokenRelics.Count > 0)
+        {
+            body.AddChild(new HSeparator());
+
+            body.AddChild(BuildSection(
+                ExtractionLocalization.SettlementBrokenRelicsText(_result.BrokenRelics.Count),
+                ExtractionItemTiles.GroupRelics(_result.BrokenRelics)
+                    .Select(g => (g.Name, g.Pool, g.Count, g.Texture, g.Rep.Id, (int?)0))));
         }
 
         body.AddChild(new HSeparator());
@@ -180,7 +209,8 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
             success
                 ? ExtractionLocalization.SettlementPotionsText(_result.Potions.Count)
                 : ExtractionLocalization.SettlementLostPotionsText(_result.Potions.Count),
-            ExtractionItemTiles.GroupPotions(_result.Potions).Select(g => (g.Name, g.Pool, g.Count, g.Texture, g.Rep.Id))));
+            ExtractionItemTiles.GroupPotions(_result.Potions)
+                .Select(g => (g.Name, g.Pool, g.Count, g.Texture, g.Rep.Id, (int?)null))));
 
         body.AddChild(new HSeparator());
 
@@ -190,7 +220,7 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
     }
 
     private Control BuildSection(string header,
-        IEnumerable<(string Name, string Pool, int Count, Texture2D? Texture, ModelId? Id)> tiles)
+        IEnumerable<(string Name, string Pool, int Count, Texture2D? Texture, ModelId? Id, int? Durability)> tiles)
     {
         var box = new VBoxContainer();
         box.AddThemeConstantOverride("separation", 8);
@@ -221,10 +251,10 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
             grid.AddThemeConstantOverride("h_separation", GridGap);
             grid.AddThemeConstantOverride("v_separation", GridGap);
             grid.Columns = ComputeColumns();
-            foreach ((string name, string pool, int count, Texture2D? texture, ModelId? id) in list)
+            foreach ((string name, string pool, int count, Texture2D? texture, ModelId? id, int? durability) in list)
             {
                 grid.AddChild(ExtractionItemTiles.MakeItemTile(name, pool, count, texture,
-                    ExtractionItemTiles.ItemTileAction.Display, null, id));
+                    ExtractionItemTiles.ItemTileAction.Display, null, id, durability));
             }
 
             box.AddChild(grid);

@@ -167,11 +167,16 @@ public static class CarryCodeImport
 
     private static int StockCount(WarehouseData warehouse, CarryCodec.ItemKind kind, ModelId id) => kind switch
     {
-        CarryCodec.ItemKind.Card => warehouse.Cards.Count(c => c.Id == id),
-        CarryCodec.ItemKind.Relic => warehouse.Relics.Count(r => r.Id == id),
+        CarryCodec.ItemKind.Card => warehouse.Cards.Count(c => c.Card.Id == id),
+        CarryCodec.ItemKind.Relic => warehouse.Relics.Count(r => r.Relic.Id == id),
         _ => warehouse.Potions.Count(p => p.Id == id),
     };
 
+    /// <summary>
+    /// Clones the lowest-durability warehouse copies of <paramref name="id"/> into the applied carry (the same
+    /// worst-gear-first rule as the hub and the console remove). 把仓库中 id 对应的最低耐久副本克隆进应用的携带（与大厅、
+    /// 控制台删除一致的「先带最破」规则）。
+    /// </summary>
     private static void CloneFromWarehouse(CarryConfig applied, WarehouseData warehouse, CarryCodec.ItemKind kind,
         ModelId id, int count)
     {
@@ -179,37 +184,31 @@ public static class CarryCodeImport
         switch (kind)
         {
             case CarryCodec.ItemKind.Card:
-                foreach (SerializableCard sc in warehouse.Cards)
+                foreach (WarehouseCard wc in warehouse.Cards
+                             .Where(c => c.Card.Id == id)
+                             .OrderBy(c => c.Durability))
                 {
                     if (remaining == 0)
                     {
                         break;
                     }
 
-                    if (sc.Id != id)
-                    {
-                        continue;
-                    }
-
-                    applied.Cards.Add(CloneCard(sc));
+                    applied.Cards.Add(CloneCard(wc));
                     remaining--;
                 }
 
                 break;
             case CarryCodec.ItemKind.Relic:
-                foreach (SerializableRelic sr in warehouse.Relics)
+                foreach (WarehouseRelic wr in warehouse.Relics
+                             .Where(r => r.Relic.Id == id)
+                             .OrderBy(r => r.Durability))
                 {
                     if (remaining == 0)
                     {
                         break;
                     }
 
-                    if (sr.Id != id)
-                    {
-                        continue;
-                    }
-
-                    applied.Relics.Add(CloneRelic(sr));
+                    applied.Relics.Add(CloneRelic(wr));
                     remaining--;
                 }
 
@@ -237,20 +236,28 @@ public static class CarryCodeImport
 
     /// <summary>Shallow-copies a stored item so the applied carry never aliases warehouse instances (which the hub
     /// treats as immutable). 浅拷贝物品，避免应用后的携带与仓库实例混用。</summary>
-    private static SerializableCard CloneCard(SerializableCard c) => new()
+    private static WarehouseCard CloneCard(WarehouseCard c) => new()
     {
-        Id = c.Id,
-        CurrentUpgradeLevel = c.CurrentUpgradeLevel,
-        Enchantment = c.Enchantment,
-        Props = c.Props,
-        FloorAddedToDeck = c.FloorAddedToDeck,
+        Card = new SerializableCard
+        {
+            Id = c.Card.Id,
+            CurrentUpgradeLevel = c.Card.CurrentUpgradeLevel,
+            Enchantment = c.Card.Enchantment,
+            Props = c.Card.Props,
+            FloorAddedToDeck = c.Card.FloorAddedToDeck,
+        },
+        Durability = c.Durability,
     };
 
-    private static SerializableRelic CloneRelic(SerializableRelic r) => new()
+    private static WarehouseRelic CloneRelic(WarehouseRelic r) => new()
     {
-        Id = r.Id,
-        Props = r.Props,
-        FloorAddedToDeck = r.FloorAddedToDeck,
+        Relic = new SerializableRelic
+        {
+            Id = r.Relic.Id,
+            Props = r.Relic.Props,
+            FloorAddedToDeck = r.Relic.FloorAddedToDeck,
+        },
+        Durability = r.Durability,
     };
 
     private static SerializablePotion ClonePotion(SerializablePotion p) => new()

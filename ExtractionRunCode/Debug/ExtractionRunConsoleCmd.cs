@@ -154,8 +154,12 @@ public sealed class ExtractionRunConsoleCmd : AbstractConsoleCmd
                     return new CmdResult(false, $"找不到卡牌 '{args[2]}'。");
                 }
 
-                List<SerializableCard> cards = Enumerable.Range(0, count)
-                    .Select(_ => card.ToMutable().ToSerializable()).ToList();
+                List<WarehouseCard> cards = Enumerable.Range(0, count)
+                    .Select(_ => new WarehouseCard
+                    {
+                        Card = card.ToMutable().ToSerializable(),
+                        Durability = WarehouseStore.MaxDurabilityForCard(card.Id),
+                    }).ToList();
                 WarehouseStore.Deposit(cards, null, null, 0);
                 WarehouseHubScreen.Current?.RefreshForExternalMutation();
                 return new CmdResult(true, $"已向仓库添加 {count} 张 {card.Id.Entry}。");
@@ -168,8 +172,12 @@ public sealed class ExtractionRunConsoleCmd : AbstractConsoleCmd
                     return new CmdResult(false, $"找不到遗物 '{args[2]}'。");
                 }
 
-                List<SerializableRelic> relics = Enumerable.Range(0, count)
-                    .Select(_ => relic.ToMutable().ToSerializable()).ToList();
+                List<WarehouseRelic> relics = Enumerable.Range(0, count)
+                    .Select(_ => new WarehouseRelic
+                    {
+                        Relic = relic.ToMutable().ToSerializable(),
+                        Durability = WarehouseStore.MaxDurabilityForRelic(),
+                    }).ToList();
                 WarehouseStore.Deposit(null, relics, null, 0);
                 WarehouseHubScreen.Current?.RefreshForExternalMutation();
                 return new CmdResult(true, $"已向仓库添加 {count} 个 {relic.Id.Entry}。");
@@ -288,9 +296,12 @@ public sealed class ExtractionRunConsoleCmd : AbstractConsoleCmd
         }
 
         // Strip the same ids out of the pending carry, else a staged copy that no longer exists in the warehouse
-        // would be injected at run start while ConsumeCarried skips the missing stock — free items.
-        // 同步把被删物品从携带中剥离（含金币 clamp），否则开跑时会净增免费物品。
+        // would be injected at run start while ConsumeCarried skips the missing stock — free items. Remove re-maps
+        // carried durability to the remaining (lowest-first) copies so the deposit decrements the right value.
+        // 同步把被删物品从携带中剥离（含金币 clamp），否则开跑时会净增免费物品；并重映射携带耐久到剩余副本（最低优先），
+        // 保证撤离时按正确值递减。
         PendingCarryStore.RevalidateAgainst(WarehouseStore.Current);
+        PendingCarryStore.RevalidateDurability(WarehouseStore.Current);
         WarehouseHubScreen.Current?.RefreshForExternalMutationAfterShrink();
         return new CmdResult(true, $"已从仓库移除 {removed} 个 {label}。");
     }

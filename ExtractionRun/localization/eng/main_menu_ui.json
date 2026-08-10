@@ -19,6 +19,11 @@
   "EXTRACTION_RUN.limit.potions": "Potions {0}/{1}",
   "EXTRACTION_RUN.gold.warehouse": "Warehouse gold: {0}",
   "EXTRACTION_RUN.gold.carry": "Carried gold: {0}",
+  "EXTRACTION_RUN.seed.label": "Seed",
+  "EXTRACTION_RUN.seed.placeholder": "Blank = random",
+
+  "EXTRACTION_RUN.durability.badge": "Durability {0}",
+  "EXTRACTION_RUN.durability.broken": "Broken",
 
   "EXTRACTION_RUN.code.generate": "Generate Gear Code",
   "EXTRACTION_RUN.code.import": "Import Gear Code",
@@ -92,6 +97,8 @@
   "EXTRACTION_RUN.settlement.relics": "Relics deposited {0}",
   "EXTRACTION_RUN.settlement.potions": "Potions deposited {0}",
   "EXTRACTION_RUN.settlement.expiredRelics": "Not extracted: {0} spent relic(s)",
+  "EXTRACTION_RUN.settlement.brokenCards": "Broken in extraction: {0} card(s)",
+  "EXTRACTION_RUN.settlement.brokenRelics": "Broken in extraction: {0} relic(s)",
   "EXTRACTION_RUN.settlement.lost.cards": "Cards lost {0}",
   "EXTRACTION_RUN.settlement.lost.relics": "Relics lost {0}",
   "EXTRACTION_RUN.settlement.lost.potions": "Potions lost {0}",
@@ -137,6 +144,11 @@
   "EXTRACTION_RUN.confirm.reset.body": "Reset the warehouse? All cards, relics, potions and gold will be cleared and the starter items re-granted. Your configured carry will also be cleared.",
   "EXTRACTION_RUN.confirm.confirm": "Confirm",
   "EXTRACTION_RUN.confirm.cancel": "Cancel",
+  "EXTRACTION_RUN.durability.enable.header": "Enable Durability",
+  "EXTRACTION_RUN.durability.enable.body": "Enabling durability will discard all progress made in no-durability mode and restore the previously saved durability warehouse. This cannot be undone.",
+  "EXTRACTION_RUN.durability.disable.header": "Disable Durability",
+  "EXTRACTION_RUN.durability.disable.body": "Disabling durability freezes the current durability warehouse and copies it into a no-durability version; re-enabling returns to the frozen warehouse.",
+  "EXTRACTION_RUN.durability.blocked": "Cannot switch durability mode while a run or lobby is active.",
 
   "EXTRACTION_RUN.toast.deposit": "Extraction successful! Loot deposited into your warehouse.",
   "EXTRACTION_RUN.toast.firstSeed": "Warehouse seeded with starter & common cards, starter & common relics and 1000 gold."

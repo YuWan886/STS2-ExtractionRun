@@ -21,6 +21,38 @@ public sealed class ExtractionSettings
     /// <summary>Whether hovering a potion tile shows the vanilla tooltip. 悬停药水瓦片是否显示原版提示框。</summary>
     public bool ShowPotionHoverTips { get; set; } = true;
 
+    /// <summary>
+    /// Whether the durability system is active. ON: carried card/relic copies lose 1 durability per successful
+    /// extraction and the active warehouse is the durability file. OFF: no durability tracking (copies never decrement,
+    /// nothing is displayed) and the active warehouse is a disposable no-durability copy — toggling never merges
+    /// no-durability progress back into the durability file (see <see cref="WarehouseStore.SwitchDurabilityMode"/>).
+    /// 耐久系统是否启用。ON：携带的牌/遗物每次撤离成功 -1 耐久，活动仓库为耐久文件；OFF：不追踪耐久（副本永不递减、不显示），
+    /// 活动仓库为一次性无耐久副本——切换永不把无耐久进度并入耐久文件（见 SwitchDurabilityMode）。
+    /// </summary>
+    public bool DurabilityEnabled { get; set; } = true;
+
+    /// <summary>Max durability granted to a new Basic-rarity card. 新入基础卡牌的耐久上限。</summary>
+    public int CardDurabilityBasic { get; set; } = 5;
+
+    /// <summary>Max durability granted to a new Common-rarity card. 新入普通卡牌的耐久上限。</summary>
+    public int CardDurabilityCommon { get; set; } = 4;
+
+    /// <summary>Max durability granted to a new Uncommon-rarity card. 新入罕见卡牌的耐久上限。</summary>
+    public int CardDurabilityUncommon { get; set; } = 3;
+
+    /// <summary>Max durability granted to a new Rare-rarity card. 新入稀有卡牌的耐久上限。</summary>
+    public int CardDurabilityRare { get; set; } = 2;
+
+    /// <summary>Max durability granted to a new Ancient-rarity card. 新入先古卡牌的耐久上限。</summary>
+    public int CardDurabilityAncient { get; set; } = 1;
+
+    /// <summary>Max durability granted to a card in any other rarity (None/Event/Token/Status/Curse/Quest, mod cards,
+    /// unresolvable ids). 其他稀有度（None/Event/Token/Status/Curse/Quest、mod 卡、解析不到）卡牌的耐久上限。</summary>
+    public int CardDurabilityOther { get; set; } = 1;
+
+    /// <summary>Max durability granted to a new relic (all relics share one value). 新入遗物的耐久上限（遗物统一）。</summary>
+    public int RelicDurability { get; set; } = 3;
+
     public void ResetToDefaults()
     {
         MaxCarryCards = 10;
@@ -28,5 +60,13 @@ public sealed class ExtractionSettings
         ShowCardHoverTips = true;
         ShowRelicHoverTips = true;
         ShowPotionHoverTips = true;
+        DurabilityEnabled = true;
+        CardDurabilityBasic = 5;
+        CardDurabilityCommon = 4;
+        CardDurabilityUncommon = 3;
+        CardDurabilityRare = 2;
+        CardDurabilityAncient = 1;
+        CardDurabilityOther = 1;
+        RelicDurability = 3;
     }
 }

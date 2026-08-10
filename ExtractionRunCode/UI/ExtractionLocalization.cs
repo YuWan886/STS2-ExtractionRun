@@ -61,6 +61,65 @@ public static class ExtractionLocalization
         ModSettingsText.LocString(SettingsTable, "extractionrun.settings.showPotionHoverTips.description",
             "Show vanilla tooltips when hovering over potions.");
 
+    public static ModSettingsText DurabilitySectionTitleText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.section.durability.title", "Durability");
+
+    public static ModSettingsText DurabilityEnabledText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.enabled", "Durability");
+
+    public static ModSettingsText DurabilityEnabledDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.enabled.description",
+            "Cards and relics lose 1 durability per successful extraction; at 0 a copy is lost. Disabling switches the warehouse to a disposable no-durability copy (progress there is lost when re-enabling).");
+
+    public static ModSettingsText DurabilityBasicText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.basic", "Starter card durability");
+
+    public static ModSettingsText DurabilityBasicDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.basic.description",
+            "Max durability granted to a new starter-rarity card.");
+
+    public static ModSettingsText DurabilityCommonText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.common", "Common card durability");
+
+    public static ModSettingsText DurabilityCommonDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.common.description",
+            "Max durability granted to a new common-rarity card.");
+
+    public static ModSettingsText DurabilityUncommonText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.uncommon", "Uncommon card durability");
+
+    public static ModSettingsText DurabilityUncommonDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.uncommon.description",
+            "Max durability granted to a new uncommon-rarity card.");
+
+    public static ModSettingsText DurabilityRareText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.rare", "Rare card durability");
+
+    public static ModSettingsText DurabilityRareDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.rare.description",
+            "Max durability granted to a new rare-rarity card.");
+
+    public static ModSettingsText DurabilityAncientText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.ancient", "Ancient card durability");
+
+    public static ModSettingsText DurabilityAncientDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.ancient.description",
+            "Max durability granted to a new ancient-rarity card.");
+
+    public static ModSettingsText DurabilityOtherText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.other", "Other card durability");
+
+    public static ModSettingsText DurabilityOtherDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.other.description",
+            "Max durability granted to cards of any other rarity (event/token/status/curse/quest, mod cards).");
+
+    public static ModSettingsText DurabilityRelicText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.relic", "Relic durability");
+
+    public static ModSettingsText DurabilityRelicDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.relic.description",
+            "Max durability granted to a new relic (all relics share one value).");
+
     public static ModSettingsText ResetSectionTitleText() =>
         ModSettingsText.LocString(SettingsTable, "extractionrun.settings.section.reset.title", "Reset");
 
@@ -133,6 +192,19 @@ public static class ExtractionLocalization
     public static string GoldWarehouseText(int gold) => Formatted("EXTRACTION_RUN.gold.warehouse", gold);
     public static string GoldCarryText(int gold) => Formatted("EXTRACTION_RUN.gold.carry", gold);
 
+    // ----- Run seed 种子 -----
+
+    public static string SeedLabelText() => Text("EXTRACTION_RUN.seed.label");
+    public static string SeedPlaceholderText() => Text("EXTRACTION_RUN.seed.placeholder");
+
+    // ----- Durability 耐久 -----
+
+    /// <summary>Tile durability badge text. 瓦片耐久角标文本。</summary>
+    public static string DurabilityBadgeText(int durability) => Formatted("EXTRACTION_RUN.durability.badge", durability);
+
+    /// <summary>Tile badge text for a broken (durability-0) copy. 战损（0 耐久）副本的瓦片角标文本。</summary>
+    public static string DurabilityBrokenText() => Text("EXTRACTION_RUN.durability.broken");
+
     // ----- Gear code 战备码 -----
 
     public static string CodeGenerateText() => Text("EXTRACTION_RUN.code.generate");
@@ -168,6 +240,17 @@ public static class ExtractionLocalization
     public static string ConfirmButtonText() => Text("EXTRACTION_RUN.confirm.confirm");
     public static string CancelButtonText() => Text("EXTRACTION_RUN.confirm.cancel");
 
+    /// <summary>Durability-mode confirm dialog: enabling. 开启耐久的确认弹窗标题/正文。</summary>
+    public static string DurabilityEnableHeaderText() => Text("EXTRACTION_RUN.durability.enable.header");
+    public static string DurabilityEnableBodyText() => Text("EXTRACTION_RUN.durability.enable.body");
+
+    /// <summary>Durability-mode confirm dialog: disabling. 关闭耐久的确认弹窗标题/正文。</summary>
+    public static string DurabilityDisableHeaderText() => Text("EXTRACTION_RUN.durability.disable.header");
+    public static string DurabilityDisableBodyText() => Text("EXTRACTION_RUN.durability.disable.body");
+
+    /// <summary>Toast shown when the durability toggle was blocked (run/lobby active). 局内/大厅中切换被拒的提示。</summary>
+    public static string DurabilityBlockedText() => Text("EXTRACTION_RUN.durability.blocked");
+
     // ----- Settlement screen 结算界面 -----
 
     public static string SettlementButtonText() => Text("EXTRACTION_RUN.settlement.button");
@@ -179,6 +262,8 @@ public static class ExtractionLocalization
     public static string SettlementRelicsText(int count) => Formatted("EXTRACTION_RUN.settlement.relics", count);
     public static string SettlementPotionsText(int count) => Formatted("EXTRACTION_RUN.settlement.potions", count);
     public static string SettlementExpiredRelicsText(int count) => Formatted("EXTRACTION_RUN.settlement.expiredRelics", count);
+    public static string SettlementBrokenCardsText(int count) => Formatted("EXTRACTION_RUN.settlement.brokenCards", count);
+    public static string SettlementBrokenRelicsText(int count) => Formatted("EXTRACTION_RUN.settlement.brokenRelics", count);
     public static string SettlementLostCardsText(int count) => Formatted("EXTRACTION_RUN.settlement.lost.cards", count);
     public static string SettlementLostRelicsText(int count) => Formatted("EXTRACTION_RUN.settlement.lost.relics", count);
     public static string SettlementLostPotionsText(int count) => Formatted("EXTRACTION_RUN.settlement.lost.potions", count);

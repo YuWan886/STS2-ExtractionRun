@@ -15,10 +15,11 @@ public sealed partial class VirtualizedItemGrid : Control
 {
     private const float Gap = 8f;
 
-    /// <summary>A tile's render payload. Texture is a resolver so the preload path can fill art in place.
-    /// 单瓦片渲染数据；贴图为解析器，供预载路径原地补图。</summary>
+    /// <summary>A tile's render payload. Texture is a resolver so the preload path can fill art in place; durability
+    /// is the tile's durability badge (null hides it — potions / no-durability mode).
+    /// 单瓦片渲染数据；贴图为解析器，供预载路径原地补图；耐久为瓦片耐久角标（null 隐藏——药水/无耐久模式）。</summary>
     public sealed record RenderData(string Name, string Pool, int Count, Func<Texture2D?> Texture,
-        ExtractionItemTiles.ItemTileAction Action, Action? OnClick, ModelId? Id);
+        ExtractionItemTiles.ItemTileAction Action, Action? OnClick, ModelId? Id, int? Durability = null);
 
     private readonly List<Button> _pool = new();
     private readonly Dictionary<Button, Action?> _callbacks = new();
@@ -162,7 +163,7 @@ public sealed partial class VirtualizedItemGrid : Control
         float stride = ExtractionItemTiles.TileHeight + Gap;
         tile.Position = new Vector2(col * (ExtractionItemTiles.TileWidth + Gap), row * stride);
         ExtractionItemTiles.PopulateItemTile(tile, data.Name, data.Pool, data.Count, data.Texture(), data.Action,
-            data.Id);
+            data.Id, data.Durability);
         _callbacks[tile] = data.OnClick;
         tile.Visible = true;
     }

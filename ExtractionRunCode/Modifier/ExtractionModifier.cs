@@ -28,6 +28,10 @@ public sealed class ExtractionModifier : ModifierModel
         foreach (Player player in runState.Players)
         {
             CarryConfig config = ExtractionRunData.Carry.Get(player);
+            // A pre-durability saved carry deserializes with the 0 sentinel; backfill so the consume below matches the
+            // warehouse's full-durability copies and the deposit decrements from full. 旧档携带以 0 哨兵反序列化；回填满耐久，
+            // 让下方消耗能精确匹配仓库满耐久副本、撤离从满耐久递减。
+            WarehouseStore.BackfillCarryDurability(config);
 
             foreach (RelicModel relic in player.Relics.ToList())
             {
@@ -71,37 +75,37 @@ public sealed class ExtractionModifier : ModifierModel
                                   $"({player.Deck.Cards.Count} cards).");
             }
 
-            foreach (SerializableCard sc in config.Cards)
+            foreach (WarehouseCard wc in config.Cards)
             {
-                if (sc.Id == null || ModelDb.GetByIdOrNull<CardModel>(sc.Id) == null)
+                if (wc.Card.Id == null || ModelDb.GetByIdOrNull<CardModel>(wc.Card.Id) == null)
                 {
-                    Entry.Logger.Warn($"ExtractionModifier skipping card from an unloaded mod: {sc.Id}");
+                    Entry.Logger.Warn($"ExtractionModifier skipping card from an unloaded mod: {wc.Card.Id}");
                     continue;
                 }
 
-                CardModel card = runState.LoadCard(sc, player);
+                CardModel card = runState.LoadCard(wc.Card, player);
                 if (card.Type == CardType.None)
                 {
                     // Degenerate identity card (repair failed / unknown valid default): the game never plays a
                     // Type=None card and its OnPlay would throw — drop it instead of injecting a crash card.
                     // 退化身份牌（修复失败/未知有效默认）：游戏从不打出 Type=None 的牌，打出即崩，丢弃防崩。
                     runState.RemoveCard(card);
-                    Entry.Logger.Warn($"ExtractionModifier skipping degenerate card (Type=None): {sc.Id}");
+                    Entry.Logger.Warn($"ExtractionModifier skipping degenerate card (Type=None): {wc.Card.Id}");
                     continue;
                 }
 
                 player.Deck.AddInternal(card, silent: true);
             }
 
-            foreach (SerializableRelic sr in config.Relics)
+            foreach (WarehouseRelic wr in config.Relics)
             {
-                if (sr.Id == null || ModelDb.GetByIdOrNull<RelicModel>(sr.Id) == null)
+                if (wr.Relic.Id == null || ModelDb.GetByIdOrNull<RelicModel>(wr.Relic.Id) == null)
                 {
-                    Entry.Logger.Warn($"ExtractionModifier skipping relic from an unloaded mod: {sr.Id}");
+                    Entry.Logger.Warn($"ExtractionModifier skipping relic from an unloaded mod: {wr.Relic.Id}");
                     continue;
                 }
 
-                RelicModel relic = RelicModel.FromSerializable(sr);
+                RelicModel relic = RelicModel.FromSerializable(wr.Relic);
                 player.AddRelicInternal(relic, silent: true);
                 CarriedPickupQueue.MarkCarried(relic);
             }

@@ -6,6 +6,7 @@ using MegaCrit.Sts2.Core.Saves.Runs;
 using STS2RitsuLib;
 using STS2RitsuLib.Data;
 using STS2RitsuLib.Utils.Persistence;
+using ExtractionRun.Settings;
 
 namespace ExtractionRun.Data;
 
@@ -18,10 +19,16 @@ public static class WarehouseStore
 {
     public const string DataKey = "warehouse";
 
+    /// <summary>The no-durability warehouse key: a derived, disposable copy used while the durability toggle is OFF.
+    /// Never written while ON; discarded (re-copied) on the next OFF. 无耐久仓库键：耐久开关关闭时使用的派生副本，ON 期间不被
+    /// 写入，下一次 OFF 时丢弃并重新复制。</summary>
+    public const string NoDurabilityDataKey = "warehouse_nodur";
+
     /// <summary>Gold is clamped to avoid int overflow and absurd UI. 金币上限，防止溢出。</summary>
     public const int MaxGold = 9_999_999;
 
-    /// <summary>Registers the warehouse data slot. Must run inside <c>BeginModDataRegistration</c>. 注册仓库数据槽位。</summary>
+    /// <summary>Registers both warehouse slots (durability + no-durability). Must run inside
+    /// <c>BeginModDataRegistration</c>. 注册两个仓库槽位（耐久 + 无耐久）。</summary>
     public static void Register()
     {
         ModDataStore.For(Entry.ModId).Register(
@@ -30,10 +37,135 @@ public static class WarehouseStore
             scope: SaveScope.Profile,
             defaultFactory: () => new WarehouseData(),
             autoCreateIfMissing: true);
+
+        ModDataStore.For(Entry.ModId).Register(
+            key: NoDurabilityDataKey,
+            fileName: "warehouse_nodur.json",
+            scope: SaveScope.Profile,
+            defaultFactory: () => new WarehouseData(),
+            autoCreateIfMissing: true);
     }
 
-    /// <summary>The live warehouse for the current profile. 当前存档的仓库。</summary>
-    public static WarehouseData Current => RitsuLibFramework.GetDataStore(Entry.ModId).Get<WarehouseData>(DataKey);
+    /// <summary>True when the durability system is enabled; gates both decrement and display. 耐久系统是否启用（决定递减与显示）。</summary>
+    public static bool IsDurabilityEnabled => ExtractionSettingsPage.Current.DurabilityEnabled;
+
+    /// <summary>The active warehouse key: the durability file while ON, the disposable no-durability copy while OFF.
+    /// 当前活动仓库键：ON 用耐久文件，OFF 用一次性无耐久副本。</summary>
+    public static string ActiveKey => IsDurabilityEnabled ? DataKey : NoDurabilityDataKey;
+
+    /// <summary>The live warehouse for the current profile and active durability mode. 当前存档、当前模式下的仓库。</summary>
+    public static WarehouseData Current => RitsuLibFramework.GetDataStore(Entry.ModId).Get<WarehouseData>(ActiveKey);
+
+    /// <summary>
+    /// Creates the no-durability copy from the durability warehouse the first time it is needed while OFF (hub open).
+    /// The copy strips durability (every copy set to its rarity's max — OFF mode never decrements, so the value is only
+    /// a representation). Guarded by file existence: the eager toggle handler already re-copies on every ON→OFF, so this
+    /// lazy path only covers a toggle that ran before the profile data was initialized. 在 OFF 模式下首次需要时（打开仓库）
+    /// 从耐久仓库创建无耐久副本：副本剥离耐久（每份置为稀有度上限——OFF 不递减，值仅作表示）。以文件是否存在为守卫：切换
+    /// 处理已在每次 ON→OFF 时急切重复制，此懒路径只覆盖「切换时档案尚未初始化」的情况。
+    /// </summary>
+    public static void EnsureNoDurabilityCopy()
+    {
+        if (IsDurabilityEnabled)
+        {
+            return;
+        }
+
+        var store = RitsuLibFramework.GetDataStore(Entry.ModId);
+        if (store.HasExistingData(NoDurabilityDataKey))
+        {
+            return;
+        }
+
+        try
+        {
+            if (!store.HasExistingData(DataKey))
+            {
+                return;
+            }
+
+            CopyDurabilityToNoDurability();
+        }
+        catch (Exception ex)
+        {
+            Entry.Logger.Warn($"WarehouseStore.EnsureNoDurabilityCopy: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Applies a durability-mode switch: ON→OFF re-copies the (frozen) durability warehouse into the no-durability
+    /// copy; OFF→ON needs no file work (the durability file was never touched while OFF — it IS the restored state) but
+    /// the stale no-durability copy is re-copied on the next OFF. Both directions re-sync the pending carry to the now
+    /// active warehouse (count clamp + durability re-map) so a carried copy never references a wrong-durability stock.
+    /// Called by the settings toggle's confirm handler; also safe when no hub is open (the active key simply flips).
+    /// 应用耐久模式切换：ON→OFF 把（冻结的）耐久仓库重新复制进无耐久副本；OFF→ON 无需动文件（耐久文件在 OFF 期间从未被写——
+    /// 它本身就是还原后的状态），但过期副本会在下一次 OFF 时重新复制。两个方向都会把待发携带重新对齐到当前活动仓库
+    /// （数量钳制 + 耐久重映射），避免携带副本引用错误耐久的库存。
+    /// </summary>
+    public static void SwitchDurabilityMode(bool nowEnabled)
+    {
+        try
+        {
+            if (!nowEnabled)
+            {
+                CopyDurabilityToNoDurability();
+            }
+            // OFF→ON needs no file work: the durability file was never touched while OFF, so it IS the restored state.
+            // The stale no-durability copy (if any) is re-copied on the next OFF.
+            // OFF→ON 无需动文件：耐久文件在 OFF 期间从未被写，它本身就是还原后的状态；过期副本在下一次 OFF 时重新复制。
+        }
+        catch (Exception ex)
+        {
+            Entry.Logger.Warn($"WarehouseStore.SwitchDurabilityMode: {ex.Message}");
+        }
+
+        try
+        {
+            // Re-sync the pending carry to the now-active warehouse: count clamp (OFF-acquired items don't exist in
+            // the durability file and are dropped) + durability re-map (full OFF-mode values become the real ones).
+            // 把待发携带重新对齐到当前活动仓库：数量钳制（OFF 期间新得的物品不存在于耐久文件，被剔除）+ 耐久重映射
+            // （OFF 模式的满耐久值换成真实值）。
+            PendingCarryStore.RevalidateAgainst(Current);
+            PendingCarryStore.RevalidateDurability(Current);
+        }
+        catch (Exception ex)
+        {
+            Entry.Logger.Warn($"WarehouseStore.SwitchDurabilityMode: revalidate failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Overwrites the no-durability copy from the current durability warehouse, stripping durability (each copy set to
+    /// its rarity's max). The durability file itself is never touched — it stays frozen as the ON-mode source of truth.
+    /// 用当前耐久仓库覆盖无耐久副本并剥离耐久（每份置为稀有度上限）。耐久文件本身绝不动——它保持冻结，是 ON 模式的唯一真源。
+    /// </summary>
+    private static void CopyDurabilityToNoDurability()
+    {
+        var store = RitsuLibFramework.GetDataStore(Entry.ModId);
+        WarehouseData source = store.Get<WarehouseData>(DataKey);
+        store.Modify<WarehouseData>(NoDurabilityDataKey, data =>
+        {
+            data.Version++;
+            data.Seeded = source.Seeded;
+            data.Normalized = source.Normalized;
+            data.IdentityRepaired = source.IdentityRepaired;
+            data.DurabilityInitialized = true;
+            data.Gold = source.Gold;
+            data.Filters = source.Filters ?? new WarehouseFilterState();
+            data.Cards = source.Cards.Select(c => new WarehouseCard
+            {
+                Card = c.Card,
+                Durability = MaxDurabilityForCard(c.Card.Id),
+            }).ToList();
+            data.Relics = source.Relics.Select(r => new WarehouseRelic
+            {
+                Relic = r.Relic,
+                Durability = MaxDurabilityForRelic(),
+            }).ToList();
+            data.Potions = source.Potions.ToList();
+        });
+        store.Save(NoDurabilityDataKey);
+    }
 
     /// <summary>
     /// Seeds the warehouse on first use: all Basic+Common cards, all Starter+Common relics and 1000 gold.
@@ -42,7 +174,7 @@ public static class WarehouseStore
     public static void EnsureSeeded()
     {
         var store = RitsuLibFramework.GetDataStore(Entry.ModId);
-        store.Modify<WarehouseData>(DataKey, data =>
+        store.Modify<WarehouseData>(ActiveKey, data =>
         {
             if (data.Seeded)
             {
@@ -53,21 +185,21 @@ public static class WarehouseStore
             data.Version++;
             GrantInitialItems(data);
         });
-        store.Save(DataKey);
+        store.Save(ActiveKey);
     }
 
     /// <summary>
     /// Wipes the warehouse and re-grants the initial seed (all Basic+Common cards, all Starter+Common relics, 1000 gold)
     /// — the console reset command. The idempotent migration flags (<see cref="WarehouseData.Seeded"/>/<see cref="WarehouseData.Normalized"/>
-    /// /<see cref="WarehouseData.IdentityRepaired"/>) and the persisted hub filter/search state are deliberately left untouched:
-    /// this is a content reset, not a re-migration.
+    /// /<see cref="WarehouseData.IdentityRepaired"/>/<see cref="WarehouseData.DurabilityInitialized"/>) and the persisted hub filter/search
+    /// state are deliberately left untouched: this is a content reset, not a re-migration.
     /// 清空仓库并重新发放初始种子（初始/普通卡牌、初始/普通遗物、1000金币）——控制台重置指令。迁移标志与界面过滤状态不动。
     /// 此乃内容重置，非重新迁移。
     /// </summary>
     public static void Reset()
     {
         var store = RitsuLibFramework.GetDataStore(Entry.ModId);
-        store.Modify<WarehouseData>(DataKey, data =>
+        store.Modify<WarehouseData>(ActiveKey, data =>
         {
             data.Version++;
             data.Cards.Clear();
@@ -76,7 +208,7 @@ public static class WarehouseStore
             data.Gold = 0;
             GrantInitialItems(data);
         });
-        store.Save(DataKey);
+        store.Save(ActiveKey);
     }
 
     /// <summary>
@@ -91,7 +223,11 @@ public static class WarehouseStore
                      .GroupBy(c => c.Id)
                      .Select(g => g.First()))
         {
-            data.Cards.Add(NormalizeCard(card.ToMutable().ToSerializable()));
+            data.Cards.Add(new WarehouseCard
+            {
+                Card = NormalizeCard(card.ToMutable().ToSerializable()),
+                Durability = MaxDurabilityForCard(card.Id),
+            });
         }
 
         var excludedStems = new HashSet<string>(StringComparer.Ordinal);
@@ -107,7 +243,11 @@ public static class WarehouseStore
                 continue;
             }
 
-            data.Relics.Add(NormalizeRelic(relic.ToMutable().ToSerializable()));
+            data.Relics.Add(new WarehouseRelic
+            {
+                Relic = NormalizeRelic(relic.ToMutable().ToSerializable()),
+                Durability = MaxDurabilityForRelic(),
+            });
         }
 
         if (excludedStems.Count > 0)
@@ -135,7 +275,7 @@ public static class WarehouseStore
     public static void EnsureNormalized()
     {
         var store = RitsuLibFramework.GetDataStore(Entry.ModId);
-        store.Modify<WarehouseData>(DataKey, data =>
+        store.Modify<WarehouseData>(ActiveKey, data =>
         {
             if (data.Normalized)
             {
@@ -147,12 +287,12 @@ public static class WarehouseStore
 
             for (int i = 0; i < data.Cards.Count; i++)
             {
-                data.Cards[i] = NormalizeCard(data.Cards[i]);
+                data.Cards[i].Card = NormalizeCard(data.Cards[i].Card);
             }
 
             for (int i = 0; i < data.Relics.Count; i++)
             {
-                data.Relics[i] = NormalizeRelic(data.Relics[i]);
+                data.Relics[i].Relic = NormalizeRelic(data.Relics[i].Relic);
             }
 
             for (int i = 0; i < data.Potions.Count; i++)
@@ -160,7 +300,7 @@ public static class WarehouseStore
                 data.Potions[i] = NormalizePotion(data.Potions[i]);
             }
         });
-        store.Save(DataKey);
+        store.Save(ActiveKey);
     }
 
     /// <summary>
@@ -174,7 +314,7 @@ public static class WarehouseStore
     public static void EnsureIdentityRepaired()
     {
         var store = RitsuLibFramework.GetDataStore(Entry.ModId);
-        store.Modify<WarehouseData>(DataKey, data =>
+        store.Modify<WarehouseData>(ActiveKey, data =>
         {
             if (data.IdentityRepaired)
             {
@@ -186,10 +326,49 @@ public static class WarehouseStore
 
             for (int i = 0; i < data.Cards.Count; i++)
             {
-                data.Cards[i] = NormalizeCard(data.Cards[i]);
+                data.Cards[i].Card = NormalizeCard(data.Cards[i].Card);
             }
         });
-        store.Save(DataKey);
+        store.Save(ActiveKey);
+    }
+
+    /// <summary>
+    /// One-shot legacy migration for the durability update: pre-durability saves deserialize with the 0 sentinel
+    /// (the JsonConverter's legacy-shape branch). Backfill every ≤0 copy to its rarity's max so the warehouse only ever
+    /// holds positive durability. Idempotent — guarded by <see cref="WarehouseData.DurabilityInitialized"/>.
+    /// 耐久更新的一次性迁移：无耐久旧档以 0 哨兵反序列化（转换器旧版形状分支）。把每份 ≤0 回填为稀有度上限，保证仓库只存正耐久。
+    /// 幂等——由 DurabilityInitialized 守卫。
+    /// </summary>
+    public static void EnsureDurabilityInitialized()
+    {
+        var store = RitsuLibFramework.GetDataStore(Entry.ModId);
+        store.Modify<WarehouseData>(ActiveKey, data =>
+        {
+            if (data.DurabilityInitialized)
+            {
+                return;
+            }
+
+            data.DurabilityInitialized = true;
+            data.Version++;
+
+            foreach (WarehouseCard wc in data.Cards)
+            {
+                if (wc.Durability <= 0)
+                {
+                    wc.Durability = MaxDurabilityForCard(wc.Card.Id);
+                }
+            }
+
+            foreach (WarehouseRelic wr in data.Relics)
+            {
+                if (wr.Durability <= 0)
+                {
+                    wr.Durability = MaxDurabilityForRelic();
+                }
+            }
+        });
+        store.Save(ActiveKey);
     }
 
     /// <summary>
@@ -198,43 +377,76 @@ public static class WarehouseStore
     /// </summary>
     public static void Persist()
     {
-        RitsuLibFramework.GetDataStore(Entry.ModId).Save(DataKey);
+        RitsuLibFramework.GetDataStore(Entry.ModId).Save(ActiveKey);
     }
 
     /// <summary>
     /// Deposits extraction loot into the warehouse. Every item is normalized to its BASE state first (upgrades,
     /// enchantments, run-scoped growth and potion slot indices stripped; identity cards keep their saved props — see
-    /// <see cref="NormalizeCard"/>). A single un-normalizable card (e.g. a corrupt saved-prop type) is skipped rather than
-    /// aborting the whole deposit, so one bad loot item never swallows the settlement. Appends (a deck clone never reaches
-    /// here — see DepositFilter). 把撤离战利品追加存入仓库，进库前统一归一（升级/附魔/成长/栏位剥离，身份卡保留 Props）。
-    /// 单张无法归一的卡（如非法保存属性类型）跳过而非让整次存入失败，避免一张坏牌吞掉整局结算。
+    /// <see cref="NormalizeCard"/>). The durability of each card/relic copy is taken from the caller (the settlement
+    /// algorithm pre-computes carried −1 vs full-for-new); a ≤0 value is clamped to 1 as a defensive invariant — the
+    /// warehouse never stores a 0 sentinel. A single un-normalizable card (e.g. a corrupt saved-prop type) is skipped
+    /// rather than aborting the whole deposit, so one bad loot item never swallows the settlement.
+    /// 把撤离战利品追加存入仓库，进库前统一归一（升级/附魔/成长/栏位剥离，身份卡保留 Props）。每份牌/遗物的耐久取自已结算的
+    /// 调用方（结算算法预先算出 携带-1 与 新货满耐久）；≤0 防御性收敛到 1——仓库从不存 0 哨兵。单张无法归一的卡（如非法保存
+    /// 属性类型）跳过而非让整次存入失败，避免一张坏牌吞掉整局结算。
     /// </summary>
-    public static void Deposit(IEnumerable<SerializableCard>? cards, IEnumerable<SerializableRelic>? relics,
+    public static void Deposit(IEnumerable<WarehouseCard>? cards, IEnumerable<WarehouseRelic>? relics,
         IEnumerable<SerializablePotion>? potions, int gold)
     {
         var store = RitsuLibFramework.GetDataStore(Entry.ModId);
-        store.Modify<WarehouseData>(DataKey, data =>
+        store.Modify<WarehouseData>(ActiveKey, data =>
         {
             data.Version++;
 
             if (cards != null)
             {
-                foreach (SerializableCard sc in cards)
+                foreach (WarehouseCard wc in cards)
                 {
+                    if (wc.Card == null)
+                    {
+                        Entry.Logger.Warn("WarehouseStore.Deposit: skipping null card copy.");
+                        continue;
+                    }
+
                     try
                     {
-                        data.Cards.Add(NormalizeCard(sc));
+                        data.Cards.Add(new WarehouseCard
+                        {
+                            Card = NormalizeCard(wc.Card),
+                            Durability = Math.Max(1, wc.Durability),
+                        });
                     }
                     catch (Exception ex)
                     {
-                        Entry.Logger.Warn($"WarehouseStore.Deposit: skipping un-normalizable card {sc.Id}: {ex.Message}");
+                        Entry.Logger.Warn($"WarehouseStore.Deposit: skipping un-normalizable card {wc.Card.Id}: {ex.Message}");
                     }
                 }
             }
 
             if (relics != null)
             {
-                data.Relics.AddRange(relics.Select(NormalizeRelic));
+                foreach (WarehouseRelic wr in relics)
+                {
+                    if (wr.Relic == null)
+                    {
+                        Entry.Logger.Warn("WarehouseStore.Deposit: skipping null relic copy.");
+                        continue;
+                    }
+
+                    try
+                    {
+                        data.Relics.Add(new WarehouseRelic
+                        {
+                            Relic = NormalizeRelic(wr.Relic),
+                            Durability = Math.Max(1, wr.Durability),
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        Entry.Logger.Warn($"WarehouseStore.Deposit: skipping un-normalizable relic {wr.Relic.Id}: {ex.Message}");
+                    }
+                }
             }
 
             if (potions != null)
@@ -244,32 +456,45 @@ public static class WarehouseStore
 
             data.Gold = ClampGold(data.Gold + gold);
         });
-        store.Save(DataKey);
+        store.Save(ActiveKey);
     }
 
     /// <summary>
-    /// Removes the carried items from this machine's warehouse (Tarkov-style: they are consumed on entry).
-    /// Only called for the LOCAL player on each machine. 从本机仓库移除已携带进局的物品（进局即消耗）。
+    /// Removes the carried items from this machine's warehouse (Tarkov-style: they are consumed on entry). Copies are
+    /// matched by (id, durability) so the exact carried copies come out — the carry config is a snapshot of the
+    /// warehouse, so the match always hits; a drift (mode toggle / console mutation) falls back to any copy of the id.
+    /// Only called for the LOCAL player on each machine. 从本机仓库移除已携带进局的物品（进局即消耗）。按 (id, 耐久) 精确匹配
+    /// 实际携带的那几份——携带配置是仓库快照，必然命中；漂移（切换/控制台改动）时回退按 id 删任意份。仅对本机本地玩家调用。
     /// </summary>
     public static void ConsumeCarried(CarryConfig carried)
     {
         var store = RitsuLibFramework.GetDataStore(Entry.ModId);
-        store.Modify<WarehouseData>(DataKey, data =>
+        store.Modify<WarehouseData>(ActiveKey, data =>
         {
             data.Version++;
 
-            foreach (SerializableCard carriedCard in carried.Cards)
+            foreach (WarehouseCard carriedCard in carried.Cards)
             {
-                int index = data.Cards.FindIndex(c => c.Id == carriedCard.Id);
+                int index = data.Cards.FindIndex(c => c.Card.Id == carriedCard.Card.Id && c.Durability == carriedCard.Durability);
+                if (index < 0)
+                {
+                    index = data.Cards.FindIndex(c => c.Card.Id == carriedCard.Card.Id);
+                }
+
                 if (index >= 0)
                 {
                     data.Cards.RemoveAt(index);
                 }
             }
 
-            foreach (SerializableRelic carriedRelic in carried.Relics)
+            foreach (WarehouseRelic carriedRelic in carried.Relics)
             {
-                int index = data.Relics.FindIndex(r => r.Id == carriedRelic.Id);
+                int index = data.Relics.FindIndex(r => r.Relic.Id == carriedRelic.Relic.Id && r.Durability == carriedRelic.Durability);
+                if (index < 0)
+                {
+                    index = data.Relics.FindIndex(r => r.Relic.Id == carriedRelic.Relic.Id);
+                }
+
                 if (index >= 0)
                 {
                     data.Relics.RemoveAt(index);
@@ -287,55 +512,80 @@ public static class WarehouseStore
 
             data.Gold = ClampGold(data.Gold - carried.Gold);
         });
-        store.Save(DataKey);
+        store.Save(ActiveKey);
     }
 
-    /// <summary>Removes up to <paramref name="count"/> copies of the given card id from the warehouse. Returns the number actually removed.
-    /// 从仓库移除最多 count 张指定卡牌，返回实际移除数。</summary>
-    public static int RemoveCards(ModelId id, int count) => RemoveCopies(id, count, d => d.Cards, c => c.Id);
+    /// <summary>
+    /// Removes up to <paramref name="count"/> copies of the given card id from the warehouse, lowest durability first
+    /// (scrap the most-worn gear first). Returns the number actually removed.
+    /// 从仓库移除最多 count 张指定卡牌（最低耐久优先），返回实际移除数。</summary>
+    public static int RemoveCards(ModelId id, int count) =>
+        RemoveCopies(id, count, d => d.Cards, c => c.Card.Id, c => c.Durability);
 
-    /// <summary>Removes up to <paramref name="count"/> copies of the given relic id from the warehouse. Returns the number actually removed.
-    /// 从仓库移除最多 count 个指定遗物，返回实际移除数。</summary>
-    public static int RemoveRelics(ModelId id, int count) => RemoveCopies(id, count, d => d.Relics, r => r.Id);
+    /// <summary>Removes up to <paramref name="count"/> copies of the given relic id from the warehouse, lowest
+    /// durability first. Returns the number actually removed. 从仓库移除最多 count 个指定遗物（最低耐久优先），返回实际移除数。</summary>
+    public static int RemoveRelics(ModelId id, int count) =>
+        RemoveCopies(id, count, d => d.Relics, r => r.Relic.Id, r => r.Durability);
 
     /// <summary>Removes up to <paramref name="count"/> copies of the given potion id from the warehouse. Returns the number actually removed.
     /// 从仓库移除最多 count 瓶指定药水，返回实际移除数。</summary>
-    public static int RemovePotions(ModelId id, int count) => RemoveCopies(id, count, d => d.Potions, p => p.Id);
+    public static int RemovePotions(ModelId id, int count) =>
+        RemoveCopies(id, count, d => d.Potions, p => p.Id, _ => 0);
 
     /// <summary>Removes gold (never below zero). Returns the new warehouse balance. 移除金币（不会扣成负数），返回新余额。</summary>
     public static int RemoveGold(int amount)
     {
         var store = RitsuLibFramework.GetDataStore(Entry.ModId);
         int balance = 0;
-        store.Modify<WarehouseData>(DataKey, data =>
+        store.Modify<WarehouseData>(ActiveKey, data =>
         {
             data.Version++;
             data.Gold = ClampGold(data.Gold - Math.Max(0, amount));
             balance = data.Gold;
         });
-        store.Save(DataKey);
+        store.Save(ActiveKey);
         return balance;
     }
 
+    /// <summary>Removes up to <paramref name="count"/> copies matching <paramref name="id"/> from the list selected by
+    /// <paramref name="listSelector"/>, ordering by durability ascending so the most-worn copies go first. The indexes
+    /// are computed and consumed inside the Modify so the live list is the one actually touched.
+    /// 从 listSelector 选出的列表移除最多 count 份匹配 id 的副本，按耐久升序先删最破的。下标在 Modify 内计算与消费，保证删的是活列表。</summary>
     private static int RemoveCopies<T>(ModelId id, int count, Func<WarehouseData, List<T>> listSelector,
-        Func<T, ModelId?> idSelector) where T : class
+        Func<T, ModelId?> idOf, Func<T, int> durabilityOf)
     {
         var store = RitsuLibFramework.GetDataStore(Entry.ModId);
         int removed = 0;
-        store.Modify<WarehouseData>(DataKey, data =>
+        store.Modify<WarehouseData>(ActiveKey, data =>
         {
             data.Version++;
             List<T> list = listSelector(data);
-            for (int i = list.Count - 1; i >= 0 && removed < count; i--)
+
+            var indexes = new List<int>();
+            for (int i = 0; i < list.Count; i++)
             {
-                if (idSelector(list[i]) == id)
+                if (idOf(list[i]) == id)
                 {
-                    list.RemoveAt(i);
-                    removed++;
+                    indexes.Add(i);
                 }
             }
+
+            if (indexes.Count == 0)
+            {
+                return;
+            }
+
+            indexes.Sort((a, b) => durabilityOf(list[a]).CompareTo(durabilityOf(list[b])));
+
+            // Remove highest index first so earlier removals don't shift later targets. 先删高下标，避免下标漂移。
+            int take = Math.Min(count, indexes.Count);
+            for (int k = take - 1; k >= 0; k--)
+            {
+                list.RemoveAt(indexes[k]);
+                removed++;
+            }
         });
-        store.Save(DataKey);
+        store.Save(ActiveKey);
         return removed;
     }
 
@@ -431,18 +681,18 @@ public static class WarehouseStore
 
     /// <summary>
     /// Reward for clearing an extraction run: the character's full starting deck (all copies) and starting relics are
-    /// deposited into the warehouse, normalized like any other loot — granted on every clear. Returns the granted items
-    /// so the settlement screen can fold them into the deposited loot.
-    /// 通关奖励：通关搜打撤后，把该角色的整套初始牌组（含全部张数）与初始遗物按普通战利品归一化入账，每次通关都发放。
-    /// 返回本次发放的物品，供结算界面并入存入战利品展示。
+    /// deposited into the warehouse, normalized like any other loot — granted on every clear, each copy at full
+    /// durability. Returns the granted items so the settlement screen can fold them into the deposited loot.
+    /// 通关奖励：通关搜打撤后，把该角色的整套初始牌组（含全部张数）与初始遗物按普通战利品归一化入账，每次通关都发放，
+    /// 每份均为满耐久。返回本次发放的物品，供结算界面并入存入战利品展示。
     /// </summary>
-    public static (List<SerializableCard> Cards, List<SerializableRelic> Relics) GrantCharacterCompletionReward(CharacterModel character)
+    public static (List<WarehouseCard> Cards, List<WarehouseRelic> Relics) GrantCharacterCompletionReward(CharacterModel character)
     {
         string entry = character.Id.Entry;
-        var grantedCards = new List<SerializableCard>();
-        var grantedRelics = new List<SerializableRelic>();
+        var grantedCards = new List<WarehouseCard>();
+        var grantedRelics = new List<WarehouseRelic>();
         var store = RitsuLibFramework.GetDataStore(Entry.ModId);
-        store.Modify<WarehouseData>(DataKey, data =>
+        store.Modify<WarehouseData>(ActiveKey, data =>
         {
             data.Version++;
 
@@ -455,9 +705,13 @@ public static class WarehouseStore
             {
                 try
                 {
-                    SerializableCard sc = NormalizeCard(card.ToMutable().ToSerializable());
-                    data.Cards.Add(sc);
-                    grantedCards.Add(sc);
+                    WarehouseCard wc = new()
+                    {
+                        Card = NormalizeCard(card.ToMutable().ToSerializable()),
+                        Durability = MaxDurabilityForCard(card.Id),
+                    };
+                    data.Cards.Add(wc);
+                    grantedCards.Add(wc);
                 }
                 catch (Exception ex)
                 {
@@ -469,9 +723,13 @@ public static class WarehouseStore
             {
                 try
                 {
-                    SerializableRelic sr = NormalizeRelic(relic.ToMutable().ToSerializable());
-                    data.Relics.Add(sr);
-                    grantedRelics.Add(sr);
+                    WarehouseRelic wr = new()
+                    {
+                        Relic = NormalizeRelic(relic.ToMutable().ToSerializable()),
+                        Durability = MaxDurabilityForRelic(),
+                    };
+                    data.Relics.Add(wr);
+                    grantedRelics.Add(wr);
                 }
                 catch (Exception ex)
                 {
@@ -479,7 +737,7 @@ public static class WarehouseStore
                 }
             }
         });
-        store.Save(DataKey);
+        store.Save(ActiveKey);
         return (grantedCards, grantedRelics);
     }
 
@@ -500,6 +758,51 @@ public static class WarehouseStore
     {
         potion.SlotIndex = 0;
         return potion;
+    }
+
+    /// <summary>Max durability a card copy is granted by its rarity (the current setting; only new deposits read it).
+    /// CardRarity.None/Event/Token/Status/Curse/Quest — and unresolvable ids — all fall to the 其他 bucket.
+    /// 卡牌按稀有度可获得的满耐久（当前设置；只有新入库才读取）。None/Event/Token/Status/Curse/Quest 及解析不到一律归「其他」。</summary>
+    public static int MaxDurabilityForCard(ModelId? id)
+    {
+        CardModel? model = id == null ? null : ModelDb.GetByIdOrNull<CardModel>(id);
+        ExtractionSettings settings = ExtractionSettingsPage.Current;
+        return model?.Rarity switch
+        {
+            CardRarity.Basic => settings.CardDurabilityBasic,
+            CardRarity.Common => settings.CardDurabilityCommon,
+            CardRarity.Uncommon => settings.CardDurabilityUncommon,
+            CardRarity.Rare => settings.CardDurabilityRare,
+            CardRarity.Ancient => settings.CardDurabilityAncient,
+            _ => settings.CardDurabilityOther,
+        };
+    }
+
+    /// <summary>Max durability a relic copy is granted (all relics share one setting). 遗物的满耐久（统一设置）。</summary>
+    public static int MaxDurabilityForRelic() => ExtractionSettingsPage.Current.RelicDurability;
+
+    /// <summary>
+    /// Backfills ≤0 (legacy 0-sentinel) durability on a carry config's copies so a pre-durability saved carry
+    /// decrements from full at extraction instead of breaking every copy. Idempotent — only touches ≤0.
+    /// 把携带配置里 ≤0（旧档 0 哨兵）的耐久回填为满，避免旧版携带在撤离时全部按「1→0 战损」处理。幂等——只动 ≤0。
+    /// </summary>
+    public static void BackfillCarryDurability(CarryConfig config)
+    {
+        foreach (WarehouseCard wc in config.Cards)
+        {
+            if (wc.Durability <= 0)
+            {
+                wc.Durability = MaxDurabilityForCard(wc.Card.Id);
+            }
+        }
+
+        foreach (WarehouseRelic wr in config.Relics)
+        {
+            if (wr.Durability <= 0)
+            {
+                wr.Durability = MaxDurabilityForRelic();
+            }
+        }
     }
 
     private static int ClampGold(int gold)

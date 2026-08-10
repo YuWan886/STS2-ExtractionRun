@@ -39,8 +39,9 @@ public static class Entry
         Harmony harmony = new(ModId);
         harmony.PatchAll(assembly);
 
-        // Some hosts (beta) reject modifier changes on the character-select lobby; adapt at runtime.
+        // Some hosts (beta) reject modifier/seed changes on the character-select lobby; adapt at runtime.
         ModifierChangeCompat.InstallIfNeeded(harmony);
+        SeedChangeCompat.InstallIfNeeded(harmony);
 
         Logger.Info("ExtractionRun initialized.");
     }

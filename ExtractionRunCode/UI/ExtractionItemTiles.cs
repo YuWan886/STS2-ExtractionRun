@@ -56,10 +56,10 @@ public static class ExtractionItemTiles
 
     public sealed record CardGroup(SerializableCard Rep, string Name, string Pool, int Count, Texture2D? Texture,
         CardRarity Rarity, CardType Type, CostBucket Cost, string PoolSlug, string PortraitPath, string Haystack,
-        ContentSource Source);
+        ContentSource Source, int Durability);
 
     public sealed record RelicGroup(SerializableRelic Rep, string Name, string Pool, int Count, Texture2D? Texture,
-        RelicRarity Rarity, string PoolSlug, string IconPath, string Haystack, ContentSource Source);
+        RelicRarity Rarity, string PoolSlug, string IconPath, string Haystack, ContentSource Source, int Durability);
 
     public sealed record PotionGroup(SerializablePotion Rep, string Name, string Pool, int Count, Texture2D? Texture,
         PotionRarity Rarity, string PoolSlug, string ImagePath, string Haystack, ContentSource Source);
@@ -88,65 +88,69 @@ public static class ExtractionItemTiles
 
     /// <summary>
     /// Groups cards by base id (upgrade levels merged — the warehouse stores base state only). Sorted by source pool
-    /// (canonical order) then rarity then id. When <paramref name="loadArt"/> is false (hub), textures are NOT touched
-    /// so the async-preload path can resolve them lazily instead of synchronously loading every portrait.
-    /// 按基础 id 分组（升级合并——仓库只存基础态），按来源池（规范序）→稀有度→id 排序。loadArt=false（大厅）时不触碰贴图，
-    /// 交由异步预加载路径延迟解析，避免首开同步加载全部立绘。
+    /// (canonical order) then rarity then id. <c>Durability</c> on the group is the LOWEST remaining durability among
+    /// its copies (the hub/settlement tile badge shows the worst copy). When <paramref name="loadArt"/> is false (hub),
+    /// textures are NOT touched so the async-preload path can resolve them lazily instead of synchronously loading
+    /// every portrait.
+    /// 按基础 id 分组（升级合并——仓库只存基础态），按来源池（规范序）→稀有度→id 排序。分组的 Durability 为该组副本的最低剩余
+    /// 耐久（大厅/结算瓦片角标显示最破的一份）。loadArt=false（大厅）时不触碰贴图，交由异步预加载路径延迟解析。
     /// </summary>
-    public static List<CardGroup> GroupCards(IReadOnlyList<SerializableCard> cards, bool loadArt = true)
+    public static List<CardGroup> GroupCards(IReadOnlyList<WarehouseCard> cards, bool loadArt = true)
     {
-        var map = new Dictionary<ModelId, (SerializableCard Rep, int Count)>();
-        foreach (SerializableCard sc in cards)
+        var map = new Dictionary<ModelId, (SerializableCard Rep, int Count, int MinDur)>();
+        foreach (WarehouseCard wc in cards)
         {
+            SerializableCard sc = wc.Card;
             if (sc.Id is not ModelId id)
             {
-                continue; 
+                continue;
             }
 
-            if (map.TryGetValue(id, out (SerializableCard Rep, int Count) entry))
+            if (map.TryGetValue(id, out (SerializableCard Rep, int Count, int MinDur) entry))
             {
-                map[id] = (entry.Rep, entry.Count + 1);
+                map[id] = (entry.Rep, entry.Count + 1, Math.Min(entry.MinDur, wc.Durability));
             }
             else
             {
-                map[id] = (sc, 1);
+                map[id] = (sc, 1, wc.Durability);
             }
         }
 
         var groups = new List<CardGroup>(map.Count);
-        foreach ((SerializableCard rep, int count) in map.Values)
+        foreach ((SerializableCard rep, int count, int minDur) in map.Values)
         {
-            groups.Add(BuildCardGroup(rep, count, loadArt));
+            groups.Add(BuildCardGroup(rep, count, minDur, loadArt));
         }
 
         groups.Sort(CompareCardGroups);
         return groups;
     }
 
-    public static List<RelicGroup> GroupRelics(IReadOnlyList<SerializableRelic> relics, bool loadArt = true)
+    public static List<RelicGroup> GroupRelics(IReadOnlyList<WarehouseRelic> relics, bool loadArt = true)
     {
-        var map = new Dictionary<ModelId, (SerializableRelic Rep, int Count)>();
-        foreach (SerializableRelic sr in relics)
+        var map = new Dictionary<ModelId, (SerializableRelic Rep, int Count, int MinDur)>();
+        foreach (WarehouseRelic wr in relics)
         {
+            SerializableRelic sr = wr.Relic;
             if (sr.Id is not ModelId id)
             {
-                continue; 
+                continue;
             }
 
-            if (map.TryGetValue(id, out (SerializableRelic Rep, int Count) entry))
+            if (map.TryGetValue(id, out (SerializableRelic Rep, int Count, int MinDur) entry))
             {
-                map[id] = (entry.Rep, entry.Count + 1);
+                map[id] = (entry.Rep, entry.Count + 1, Math.Min(entry.MinDur, wr.Durability));
             }
             else
             {
-                map[id] = (sr, 1);
+                map[id] = (sr, 1, wr.Durability);
             }
         }
 
         var groups = new List<RelicGroup>(map.Count);
-        foreach ((SerializableRelic rep, int count) in map.Values)
+        foreach ((SerializableRelic rep, int count, int minDur) in map.Values)
         {
-            groups.Add(BuildRelicGroup(rep, count, loadArt));
+            groups.Add(BuildRelicGroup(rep, count, minDur, loadArt));
         }
 
         groups.Sort(CompareRelicGroups);
@@ -183,7 +187,7 @@ public static class ExtractionItemTiles
         return groups;
     }
 
-    private static CardGroup BuildCardGroup(SerializableCard rep, int count, bool loadArt)
+    private static CardGroup BuildCardGroup(SerializableCard rep, int count, int minDurability, bool loadArt)
     {
         CardModel? card = rep.Id == null ? null : ModelDb.GetByIdOrNull<CardModel>(rep.Id);
         ContentSource source = rep.Id == null ? ContentSource.Unknown
@@ -220,10 +224,11 @@ public static class ExtractionItemTiles
             poolSlug,
             display?.PortraitPath ?? "",
             haystack,
-            source);
+            source,
+            minDurability);
     }
 
-    private static RelicGroup BuildRelicGroup(SerializableRelic rep, int count, bool loadArt)
+    private static RelicGroup BuildRelicGroup(SerializableRelic rep, int count, int minDurability, bool loadArt)
     {
         RelicModel? relic = rep.Id == null ? null : ModelDb.GetByIdOrNull<RelicModel>(rep.Id);
         ContentSource source = rep.Id == null ? ContentSource.Unknown
@@ -238,7 +243,8 @@ public static class ExtractionItemTiles
             poolSlug,
             relic?.IconPath ?? "",
             haystack,
-            source);
+            source,
+            minDurability);
     }
 
     private static PotionGroup BuildPotionGroup(SerializablePotion rep, int count, bool loadArt)
@@ -326,16 +332,17 @@ public static class ExtractionItemTiles
     // ----- Tile rendering 卡片渲染 -----
 
     /// <summary>
-    /// Builds one item tile: art, name, source pool, quantity badge, and an add/remove affordance. Convenience wrapper
-    /// over <see cref="CreateItemTile"/> + <see cref="PopulateItemTile"/> for one-shot tiles (carry, settlement).
-    /// <paramref name="id"/> feeds the tile's vanilla hover tip. 构建一张物品卡片：贴图、名称、来源池、数量角标与增删操作
+    /// Builds one item tile: art, name, source pool, quantity badge, an add/remove affordance, and (for cards/relics
+    /// with a known durability) a durability badge. Convenience wrapper over <see cref="CreateItemTile"/> +
+    /// <see cref="PopulateItemTile"/> for one-shot tiles (carry, settlement). <paramref name="id"/> feeds the tile's
+    /// vanilla hover tip. 构建一张物品卡片：贴图、名称、来源池、数量角标、增删操作，以及（已知耐久的牌/遗物）耐久角标
     /// （一次性瓦片的便捷封装）；id 供悬停提示使用。
     /// </summary>
     public static Button MakeItemTile(string name, string pool, int count, Texture2D? texture,
-        ItemTileAction action, Action? onClick, ModelId? id)
+        ItemTileAction action, Action? onClick, ModelId? id, int? durability = null)
     {
         Button button = CreateItemTile();
-        PopulateItemTile(button, name, pool, count, texture, action, id);
+        PopulateItemTile(button, name, pool, count, texture, action, id, durability);
         if (onClick != null)
         {
             button.Pressed += onClick;
@@ -390,6 +397,46 @@ public static class ExtractionItemTiles
         };
         art.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         well.AddChild(art);
+
+        // Durability pill (bottom-right of the art well): shows the lowest remaining durability of a copy group
+        // (cards/relics only), value-coded (white ≥ 2, amber at 1 — one extraction from breaking — red for a broken
+        // 0), hidden for potions and no-durability mode. A bottom-aligned VBox + ShrinkEnd pill pins it to the corner
+        // and sizes to both the well's dynamic height and the string's width (Durability 20 vs 耐久 20).
+        // 耐久胶囊（贴图凹槽右下角）：显示该组最低剩余耐久（仅牌/遗物），按剩余值分级着色（≥2 近白，1 琥珀——再撤一次即战损，
+        // 0 战损红「耗尽」），药水与无耐久模式隐藏。VBox 底对齐 + ShrinkEnd 右对齐把胶囊钉在凹槽右下角，随凹槽动态高度与
+        // 文案宽度（Durability 20 / 耐久 20）自适应。
+        var durabilityHost = new VBoxContainer
+        {
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            Alignment = BoxContainer.AlignmentMode.End,
+        };
+        durabilityHost.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        // Right edge matches the quantity badge's right edge — that badge sits at tile-x 104 while the well ends at
+        // 102, so the pill overhangs the well by the same 2px (both badges share the right axis). Bottom sits flush
+        // with the well's bottom edge.
+        // 右缘与右上角数量角标对齐（数量角标在瓦片 x=104，凹槽右缘 102，胶囊随之凸出凹槽 2px，两角标共用右轴）；
+        // 下缘与凹槽底缘齐平。
+        durabilityHost.OffsetRight = 2f;
+        durabilityHost.OffsetBottom = 0f;
+        well.AddChild(durabilityHost);
+
+        var durabilityPill = new PanelContainer
+        {
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            SizeFlagsHorizontal = Control.SizeFlags.ShrinkEnd,
+        };
+        durabilityPill.AddThemeStyleboxOverride("panel", ExtractionTheme.BadgeBox());
+        durabilityHost.AddChild(durabilityPill);
+
+        var durabilityLabel = new Label
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        durabilityLabel.AddThemeFontSizeOverride("font_size", 11);
+        durabilityLabel.AddThemeColorOverride("font_color", ExtractionTheme.Text);
+        durabilityPill.AddChild(durabilityLabel);
 
         // Name.
         var nameLabel = new Label
@@ -459,19 +506,24 @@ public static class ExtractionItemTiles
         button.SetMeta("_badge", badgeLabel);
         button.SetMeta("_glyph", glyph);
         button.SetMeta("_glyphLabel", glyphLabel);
+        button.SetMeta("_durability", durabilityLabel);
+        button.SetMeta("_durabilityPill", durabilityPill);
         button.MouseEntered += () => ExtractionItemTooltip.Show(button);
         button.MouseExited += () => ExtractionItemTooltip.Hide(button);
         return button;
     }
 
     /// <summary>
-    /// Re-binds a pooled tile to new data (name / pool / count / texture / action / tooltip id). Idempotent — safe to
-    /// call on an already-populated tile. A tooltip open for the previous item is closed when the id changes (a recycled
-    /// tile would otherwise keep showing stale content). 把池化瓦片重新绑定到新数据（名称/池/数量/贴图/角色/提示 id）。
-    /// 换 id 时关闭旧物品的悬停提示，避免回收瓦片残留上一张卡的内容。
+    /// Re-binds a pooled tile to new data (name / pool / count / texture / action / tooltip id / durability).
+    /// Idempotent — safe to call on an already-populated tile. A tooltip open for the previous item is closed when the
+    /// id changes (a recycled tile would otherwise keep showing stale content). The durability pill is hidden for
+    /// potions and no-durability mode (null) and value-coded when shown: white ≥ 2, amber at 1 (one extraction from
+    /// breaking), red "Broken" for 0 (a broken-copy display).
+    /// 把池化瓦片重新绑定到新数据（名称/池/数量/贴图/角色/提示 id/耐久）。换 id 时关闭旧物品的悬停提示。耐久胶囊对药水与
+    /// 无耐久模式隐藏（null），显示时按剩余值分级：≥2 近白，1 琥珀（再撤一次即战损），0（战损副本展示）为红色「耗尽」。
     /// </summary>
     public static void PopulateItemTile(Button button, string name, string pool, int count, Texture2D? texture,
-        ItemTileAction action, ModelId? id)
+        ItemTileAction action, ModelId? id, int? durability = null)
     {
         if (ExtractionItemTooltip.SetItem(button, id))
         {
@@ -482,6 +534,21 @@ public static class ExtractionItemTiles
         GetMetaLabel(button, "_pool").Text = pool;
         GetMetaNode<TextureRect>(button, "_art").Texture = texture;
         GetMetaLabel(button, "_badge").Text = $"×{count}";
+
+        Label durabilityLabel = GetMetaLabel(button, "_durability");
+        PanelContainer durabilityPill = GetMetaNode<PanelContainer>(button, "_durabilityPill");
+        if (durability.HasValue)
+        {
+            durabilityLabel.Text = durability.Value <= 0
+                ? ExtractionLocalization.DurabilityBrokenText()
+                : ExtractionLocalization.DurabilityBadgeText(durability.Value);
+            durabilityLabel.AddThemeColorOverride("font_color", DurabilityColor(durability.Value));
+            durabilityPill.Visible = true;
+        }
+        else
+        {
+            durabilityPill.Visible = false;
+        }
 
         bool display = action == ItemTileAction.Display;
         bool add = action == ItemTileAction.Add;
@@ -494,6 +561,15 @@ public static class ExtractionItemTiles
     private static Label GetMetaLabel(Button button, string key) => button.GetMeta(key).As<Label>();
 
     private static T GetMetaNode<[MustBeVariant] T>(Button button, string key) => button.GetMeta(key).As<T>();
+
+    /// <summary>Durability badge text color, value-coded: near-white while healthy, amber at 1 (one extraction from
+    /// breaking), red for a broken (0) copy. 耐久角标文字颜色按剩余值分级：健康近白，1（再撤一次即战损）琥珀警示，战损红。</summary>
+    private static Color DurabilityColor(int durability) => durability switch
+    {
+        <= 0 => ExtractionTheme.Danger,
+        1 => ExtractionTheme.GoldChipText,
+        _ => ExtractionTheme.Text,
+    };
 
     // ----- Model lookups 模型解析 -----
 

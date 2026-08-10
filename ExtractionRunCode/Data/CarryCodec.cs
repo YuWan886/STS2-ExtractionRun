@@ -58,8 +58,8 @@ public static class CarryCodec
     public static string Encode(CarryConfig carry, Func<ItemKind, ModelId, string?> resolveOwner)
     {
         var segments = new List<string>();
-        AppendSegments(segments, carry.Cards, ItemKind.Card, static c => c.Id, resolveOwner);
-        AppendSegments(segments, carry.Relics, ItemKind.Relic, static r => r.Id, resolveOwner);
+        AppendSegments(segments, carry.Cards, ItemKind.Card, static c => c.Card.Id, resolveOwner);
+        AppendSegments(segments, carry.Relics, ItemKind.Relic, static r => r.Relic.Id, resolveOwner);
         AppendSegments(segments, carry.Potions, ItemKind.Potion, static p => p.Id, resolveOwner);
 
         if (carry.Gold > 0)

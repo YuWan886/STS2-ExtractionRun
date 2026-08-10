@@ -21,10 +21,16 @@ public static class ExtractionRunContext
     /// <summary>Modifiers captured from <c>NCharacterSelectScreen.BeginRun</c>, awaiting forwarding to NGame. 待前向转发的修正项。</summary>
     public static IReadOnlyList<ModifierModel>? PendingRunModifiers { get; set; }
 
+    /// <summary>Seed chosen in the warehouse hub for the next extraction run (host/singleplayer only); null = random.
+    /// Consumed into the lobby by <c>CharacterSelectPatch</c> before the run begins. 仓库大厅为下一局设置的种子（仅主机/单机）；
+    /// null 表示随机。开跑前由 CharacterSelectPatch 注入大厅。</summary>
+    public static string? PendingSeed { get; set; }
+
     /// <summary>Clears the launch flow state (after a run starts or the flow is cancelled).</summary>
     public static void Clear()
     {
         IsExtractionLaunch = false;
         PendingRunModifiers = null;
+        PendingSeed = null;
     }
 }

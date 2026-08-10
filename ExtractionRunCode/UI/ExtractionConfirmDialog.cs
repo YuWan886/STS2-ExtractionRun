@@ -17,15 +17,17 @@ public sealed partial class ExtractionConfirmDialog : CanvasLayer
     private readonly string _title;
     private readonly string _body;
     private readonly Action _onConfirm;
+    private readonly Action? _onCancel;
 
     private Button _cancelButton = null!;
 
-    public ExtractionConfirmDialog(string title, string body, Action onConfirm)
+    public ExtractionConfirmDialog(string title, string body, Action onConfirm, Action? onCancel = null)
     {
         Layer = 200;
         _title = title;
         _body = body;
         _onConfirm = onConfirm;
+        _onCancel = onCancel;
     }
 
     public override void _Ready()
@@ -38,7 +40,7 @@ public sealed partial class ExtractionConfirmDialog : CanvasLayer
     {
         if (inputEvent is InputEventKey { Pressed: true, Keycode: Key.Escape })
         {
-            QueueFree();
+            Cancel();
             GetViewport().SetInputAsHandled();
         }
     }
@@ -100,7 +102,7 @@ public sealed partial class ExtractionConfirmDialog : CanvasLayer
 
         _cancelButton = MakeButton(ExtractionLocalization.CancelButtonText(), ExtractionTheme.ButtonSecondary);
         _cancelButton.CustomMinimumSize = new Vector2(140f, 44f);
-        _cancelButton.Pressed += QueueFree;
+        _cancelButton.Pressed += Cancel;
         buttons.AddChild(_cancelButton);
 
         var confirm = MakeButton(ExtractionLocalization.ConfirmButtonText(), ExtractionTheme.ButtonPrimary);
@@ -118,6 +120,20 @@ public sealed partial class ExtractionConfirmDialog : CanvasLayer
         catch (Exception e)
         {
             Entry.Logger.Error($"ExtractionConfirmDialog: confirm action failed: {e}");
+        }
+
+        QueueFree();
+    }
+
+    private void Cancel()
+    {
+        try
+        {
+            _onCancel?.Invoke();
+        }
+        catch (Exception e)
+        {
+            Entry.Logger.Error($"ExtractionConfirmDialog: cancel action failed: {e}");
         }
 
         QueueFree();

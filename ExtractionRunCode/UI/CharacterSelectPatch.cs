@@ -110,6 +110,18 @@ public static class CharacterSelectPatch
             ExtractionRunContext.IsExtractionLaunch = false;
             ExtractionCarrySync.StagePendingCarry(lobby, lobby.NetService.NetId);
             ExtractionCarrySync.ApplyExtractionModifier(lobby);
+
+            // The run seed (host/singleplayer only): injected before BeginRun so the host's begin-run message carries
+            // it to every machine — overriding the seed in NGame.Start*Run would desync (clients use the message seed).
+            // 注入跑局种子（仅主机/单机）：在 BeginRun 之前写入大厅，主机 begin-run 消息随之把它带给所有机器——若改在
+            // NGame.Start*Run 覆盖种子会造成不同步（客户端用的是 begin-run 消息里的种子）。
+            if (isHost && ExtractionRunContext.PendingSeed is { } seed)
+            {
+                ExtractionRunContext.PendingSeed = null;
+                lobby.SetSeed(seed);
+                Entry.Logger.Info($"CharacterSelectPatch: applied run seed {seed} to extraction lobby.");
+            }
+
             Entry.Logger.Info("CharacterSelectPatch: extraction modifier applied to lobby.");
         }
         else if (!isHost && ExtractionCarrySync.HasExtractionModifier(lobby.Modifiers))

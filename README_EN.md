@@ -26,9 +26,11 @@ On first use, the warehouse is seeded with all Basic and Common cards, all Start
 - **Persistent warehouse**: independent per-save storage that accumulates loot across runs (gold capped at 9,999,999).
 - **Carry system**: freely assemble a loadout before each run; capacity is configurable (default 10 cards / 3 relics).
 - **Search-Loot-Extract loop**: winner takes all, loser loses everything — death or abandon forfeits every carried item.
+- **Durability**: every card and relic copy carries durability. Each successful extraction decrements the carried-and-returned copies by 1; a copy reaching 0 breaks and is not deposited. Death or abandon loses the loadout outright (consumed at run start — durability never decrements on a loss). Tiles show the group's lowest remaining durability (amber "Durability n" badge); 0 shows a red "Broken" badge. Can be disabled entirely (see Settings).
 - **Clear reward**: every victory grants the character's full starting deck and starting relics, keeping your baseline kit renewable for future runs.
 - **Warehouse hub**: three tabs (cards / relics / potions), each with its own search box and multi-select filters (source pool, rarity, type, cost), a virtualized grid that stays smooth with large warehouses, and background art preloading.
 - **Extraction report**: an "Extraction Report" button on the game-over screen shows exactly what was deposited or lost.
+- **Run seed**: set a custom run seed in the hub's footer before starting — the input is canonicalized live (uppercase, O→0, I→1) with a clear button; blank = random, matching the base game's custom-run field. The seed is a session-only, host-owned run parameter, never persisted with the carry; in MP the whole party follows the host's seed.
 - **Singleplayer & multiplayer**: both work; in MP, each player's loadout is settled independently per their own settings.
 - **Settings page**: sliders for max carried cards (0–20) and max carried relics (0–6), plus a one-click reset.
 
@@ -36,9 +38,12 @@ On first use, the warehouse is seeded with all Basic and Common cards, all Start
 
 - **Max carried cards**: 0–20, default 10.
 - **Max carried relics**: 0–6, default 3.
+- **Hover tooltips**: whether hovering card / relic / potion tiles shows the vanilla tooltip (default on).
+- **Durability**: master toggle, default on. Disabling switches the warehouse to a disposable no-durability copy (copies never decrement, nothing is shown); re-enabling returns to the previously frozen durability warehouse, discarding any no-durability progress.
+- **Durability caps**: the max durability granted to newly deposited items (new deposits only — existing copies are never retroactively changed), each a 1–20 slider — starter 5 / common 4 / uncommon 3 / rare 2 / ancient 1 / other 1 (event, token, status, curse, quest and mod cards) / relic 3.
 - **Reset to defaults**: restores every setting.
 
-Settings are stored at global scope, shared across all saves.
+Toggling durability requires a confirmation dialog and is blocked while a run or a character-select lobby is active (the carry is already staged and can't be retracted). Settings are stored at global scope, shared across all saves.
 
 ## Compatibility
 

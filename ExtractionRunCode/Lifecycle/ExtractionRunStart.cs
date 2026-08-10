@@ -30,6 +30,7 @@ public static class ExtractionRunStart
             {
                 modifiers = pending;
                 ExtractionRunContext.PendingRunModifiers = null;
+                ExtractionRunContext.PendingSeed = null;
                 gameMode = GameMode.Custom;
             }
         }
@@ -46,6 +47,7 @@ public static class ExtractionRunStart
             {
                 modifiers = pending;
                 ExtractionRunContext.PendingRunModifiers = null;
+                ExtractionRunContext.PendingSeed = null;
 
                 PropertyInfo? gameModeProperty = typeof(StartRunLobby).GetProperty(nameof(StartRunLobby.GameMode));
                 if (gameModeProperty != null)

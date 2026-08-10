@@ -1,5 +1,6 @@
 using Godot;
 using MegaCrit.Sts2.Core.Helpers;
+using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Multiplayer.Game.Lobby;
 using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect;
@@ -74,6 +75,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     private readonly StartRunLobby? _lobby;
     private readonly WarehouseData _warehouse;
     private readonly CarryConfig _carry;
+    private readonly bool _showDurability;
     private int _carryGold;
 
     /// <summary>The hub currently open in the scene tree (null when closed) — lets the console command refresh it after
@@ -110,6 +112,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     private Label _carryRelicsLabel = null!;
     private Label _carryPotionsLabel = null!;
     private LineEdit _goldInput = null!;
+    private LineEdit _seedInput = null!;
     private Button _startButton = null!;
     private Label _startHintLabel = null!;
     private Button _generateButton = null!;
@@ -122,36 +125,46 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         _lobby = lobby;
         Layer = 100;
 
-        // Seed on first open (idempotent), run the one-shot legacy normalizations (base-state + identity-card repair),
-        // then load the live warehouse and a detached copy of the pending carry — only written back on confirm/start,
-        // so closing never leaks edits. 首次种子、一次性旧档归一（基础态 + 身份牌修复）、加载实时仓库与待发携带的独立副本
-        // （仅在确认/开跑时写回）。
+        // Seed on first open (idempotent), run the one-shot legacy normalizations (base-state + identity-card repair +
+        // durability backfill), ensure the no-durability copy exists while durability is OFF, then load the live
+        // warehouse and a detached copy of the pending carry — only written back on confirm/start, so closing never
+        // leaks edits. 首次种子、一次性旧档归一（基础态 + 身份牌修复 + 耐久回填）、耐久关闭时确保无耐久副本存在，然后加载
+        // 实时仓库与待发携带的独立副本（仅在确认/开跑时写回）。
+        WarehouseStore.EnsureNoDurabilityCopy();
         WarehouseStore.EnsureSeeded();
         WarehouseStore.EnsureNormalized();
         WarehouseStore.EnsureIdentityRepaired();
+        WarehouseStore.EnsureDurabilityInitialized();
         _warehouse = WarehouseStore.Current;
         _carry = PendingCarryStore.Snapshot();
         _carryGold = _carry.Gold;
+        _showDurability = WarehouseStore.IsDurabilityEnabled;
 
         // A pending carry saved before the base-only change may still hold upgraded/enchanted items. Normalize it in
         // place so carried items always match the (base-only) warehouse exactly — otherwise a stale +1 carry would
         // consume a base copy while injecting the upgraded one (free upgrade). Identity cards (MadScience) keep their
-        // saved props here, matching the warehouse's own normalization. 旧档遗留的待发携带可能仍带升级/附魔；原地归一到与
-        // 仓库一致的基础态（身份牌保留其 Props），否则旧 +1 携带会消耗基础卡却注入升级卡（白嫖升级）。
+        // saved props here, matching the warehouse's own normalization. Durability ≤0 (pre-durability sentinel) is
+        // backfilled to full so the carry decrements from full at extraction.
+        // 旧档遗留的待发携带可能仍带升级/附魔；原地归一到与仓库一致的基础态（身份牌保留其 Props），否则旧 +1 携带会消耗基础卡却
+        // 注入升级卡（白嫖升级）。耐久 ≤0（无耐久旧档哨兵）回填满耐久，保证撤离时从满耐久递减。
         for (int i = 0; i < _carry.Cards.Count; i++)
         {
-            _carry.Cards[i] = WarehouseStore.NormalizeCard(_carry.Cards[i]);
+            WarehouseCard wc = _carry.Cards[i];
+            _carry.Cards[i] = new WarehouseCard { Card = WarehouseStore.NormalizeCard(wc.Card), Durability = wc.Durability };
         }
 
         for (int i = 0; i < _carry.Relics.Count; i++)
         {
-            _carry.Relics[i] = WarehouseStore.NormalizeRelic(_carry.Relics[i]);
+            WarehouseRelic wr = _carry.Relics[i];
+            _carry.Relics[i] = new WarehouseRelic { Relic = WarehouseStore.NormalizeRelic(wr.Relic), Durability = wr.Durability };
         }
 
         for (int i = 0; i < _carry.Potions.Count; i++)
         {
             _carry.Potions[i] = WarehouseStore.NormalizePotion(_carry.Potions[i]);
         }
+
+        WarehouseStore.BackfillCarryDurability(_carry);
 
         // Defensive: a hand-edited/corrupt save could deserialize Filters as null.
         _warehouse.Filters ??= new WarehouseFilterState();
@@ -691,6 +704,66 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         _goldInput.Text = _carryGold.ToString();
     }
 
+    // ----- Run seed 种子 -----
+
+    /// <summary>The run-seed input shown to the left of the start button: a LineEdit (live-canonicalized: uppercase,
+    /// O→0, I→1) + a clear button. Blank = random, matching the base game's custom-run seed field. The seed is a
+    /// session-only, host-owned run parameter — read into <c>ExtractionRunContext.PendingSeed</c> at <c>StartRun</c>,
+    /// never persisted with the carry. 开跑按钮左侧的跑局种子输入：LineEdit（实时规范化：大写、O→0、I→1）+ 清空按钮。
+    /// 留空=随机，与基础游戏 Custom 界面种子框一致。种子为仅本会话、主机所有的跑局参数——开跑时读入 PendingSeed，不随携带持久化。</summary>
+    private Control BuildSeedRow()
+    {
+        var row = new HBoxContainer();
+        row.AddThemeConstantOverride("separation", 8);
+
+        var label = MakeLabel(ExtractionLocalization.SeedLabelText());
+        label.AddThemeColorOverride("font_color", ExtractionTheme.Text);
+        label.AddThemeFontSizeOverride("font_size", ExtractionTheme.FontSizeSmall);
+        row.AddChild(label);
+
+        _seedInput = new LineEdit
+        {
+            Alignment = HorizontalAlignment.Center,
+            CustomMinimumSize = new Vector2(200f, 42f),
+            PlaceholderText = ExtractionLocalization.SeedPlaceholderText(),
+        };
+        _seedInput.AddThemeFontSizeOverride("font_size", 18);
+        _seedInput.TextChanged += OnSeedTextChanged;
+        _seedInput.TextSubmitted += _ => CommitSeedInput();
+        _seedInput.FocusExited += () => CommitSeedInput();
+        row.AddChild(_seedInput);
+
+        var clear = MakeButton("×", ExtractionTheme.ButtonSecondary);
+        clear.CustomMinimumSize = new Vector2(42f, 42f);
+        clear.AddThemeFontSizeOverride("font_size", 20);
+        clear.Pressed += () => _seedInput.Text = string.Empty;
+        row.AddChild(clear);
+
+        return row;
+    }
+
+    /// <summary>Live-canonicalizes the seed as the player types so what is shown equals what is used. The base game's
+    /// <c>CanonicalizeSeed</c> is idempotent (uppercase, O→0, I→1, trim), so pre-canonicalizing changes nothing.
+    /// 输入时实时规范化种子，所见即所用——基础游戏 CanonicalizeSeed 幂等，预先规范化不影响最终种子。</summary>
+    private void OnSeedTextChanged(string text)
+    {
+        string canonical = CanonicalizeSeedText(text);
+        if (canonical != text)
+        {
+            _seedInput.Text = canonical;
+            _seedInput.CaretColumn = canonical.Length;
+        }
+    }
+
+    /// <summary>Trims + canonicalizes on commit (Enter / blur). 提交（回车/失焦）时去首尾空白并规范化。</summary>
+    private void CommitSeedInput()
+    {
+        _seedInput.Text = CanonicalizeSeedText(_seedInput.Text.Trim());
+    }
+
+    private static string CanonicalizeSeedText(string seed) =>
+        seed.ToUpperInvariant().Replace('O', '0').Replace('I', '1');
+
     // ----- Footer: primary start action -----
 
     private Control BuildFooter()
@@ -698,9 +771,18 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         var footer = new VBoxContainer();
         footer.AddThemeConstantOverride("separation", 6);
 
-        var row = new HBoxContainer();
-        row.AddThemeConstantOverride("separation", 16);
-        row.Alignment = BoxContainer.AlignmentMode.Center;
+        // The action row is a full-width surface: the primary button sits at the exact horizontal center (a full-rect
+        // CenterContainer) while the run-seed input pins to the left edge — a centered primary action with an auxiliary
+        // left-aligned field, instead of the whole pair floating as a centered block. The client modal hides the seed
+        // row, leaving only the centered confirm button.
+        // 操作行是整宽面板：主按钮精确水平居中（整幅 CenterContainer），种子输入框贴靠左缘——主操作居中、辅助输入靠左，
+        // 而非整组作为居中块悬浮。客机模态隐藏种子行，仅剩居中的确认按钮。
+        var row = new Control { CustomMinimumSize = new Vector2(0f, 54f) };
+
+        var center = new CenterContainer();
+        center.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        center.MouseFilter = Control.MouseFilterEnum.Ignore;
+        row.AddChild(center);
 
         // Client modal: the primary action confirms the carry into the lobby instead of launching a run.
         // 客户端模态：主按钮为「确认携带」而非发起跑局。
@@ -718,7 +800,23 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         }
 
         _startButton = start;
-        row.AddChild(start);
+        center.AddChild(start);
+
+        // Run seed input pinned to the footer's left edge — host/singleplayer only: the host owns the run seed,
+        // clients join under it. ShrinkBegin keeps the row at natural width, left-aligned in the Ignore host.
+        // 跑局种子输入贴靠底部左缘——仅主机/单机：种子归主机，客户端沿用主机种子。ShrinkBegin 令其保持自然宽度、左对齐。
+        var seedHost = new VBoxContainer
+        {
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            Alignment = BoxContainer.AlignmentMode.Center,
+        };
+        seedHost.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        row.AddChild(seedHost);
+
+        Control seedRow = BuildSeedRow();
+        seedRow.SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin;
+        seedRow.Visible = !isClient;
+        seedHost.AddChild(seedRow);
 
         footer.AddChild(row);
 
@@ -846,15 +944,10 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         {
             foreach (ExtractionItemTiles.CardGroup g in ExtractionItemTiles.GroupCards(_carry.Cards, loadArt: false))
             {
-                SerializableCard rep = g.Rep;
                 _carryCardList.AddChild(ExtractionItemTiles.MakeItemTile(g.Name, g.Pool, g.Count,
                     WarehouseCache.Resolve(g.PortraitPath), ExtractionItemTiles.ItemTileAction.Remove,
-                    () =>
-                    {
-                        _carry.Cards.Remove(rep);
-                        Refresh();
-                    },
-                    g.Rep.Id));
+                    () => RemoveFromCarryCards(g.Rep.Id),
+                    g.Rep.Id, _showDurability ? g.Durability : null));
             }
         }
 
@@ -866,15 +959,10 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         {
             foreach (ExtractionItemTiles.RelicGroup g in ExtractionItemTiles.GroupRelics(_carry.Relics, loadArt: false))
             {
-                SerializableRelic rep = g.Rep;
                 _carryRelicList.AddChild(ExtractionItemTiles.MakeItemTile(g.Name, g.Pool, g.Count,
                     WarehouseCache.Resolve(g.IconPath), ExtractionItemTiles.ItemTileAction.Remove,
-                    () =>
-                    {
-                        _carry.Relics.Remove(rep);
-                        Refresh();
-                    },
-                    g.Rep.Id));
+                    () => RemoveFromCarryRelics(g.Rep.Id),
+                    g.Rep.Id, _showDurability ? g.Durability : null));
             }
         }
 
@@ -886,14 +974,9 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         {
             foreach (ExtractionItemTiles.PotionGroup g in ExtractionItemTiles.GroupPotions(_carry.Potions, loadArt: false))
             {
-                SerializablePotion rep = g.Rep;
                 _carryPotionList.AddChild(ExtractionItemTiles.MakeItemTile(g.Name, g.Pool, g.Count,
                     WarehouseCache.Resolve(g.ImagePath), ExtractionItemTiles.ItemTileAction.Remove,
-                    () =>
-                    {
-                        _carry.Potions.Remove(rep);
-                        Refresh();
-                    },
+                    () => RemoveFromCarryPotions(g.Rep.Id),
                     g.Rep.Id));
             }
         }
@@ -1025,10 +1108,16 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
                 continue; // Capped; counted toward the hint but not rendered.
             }
 
-            SerializableCard rep = g.Rep;
             rows.Add(new VirtualizedItemGrid.RenderData(g.Name, g.Pool, available,
                 () => WarehouseCache.Resolve(g.PortraitPath), ExtractionItemTiles.ItemTileAction.Add,
-                () => AddToCarryCards(rep), g.Rep.Id));
+                () =>
+                {
+                    if (g.Rep.Id is ModelId id)
+                    {
+                        AddToCarryCards(id);
+                    }
+                },
+                g.Rep.Id, _showDurability ? g.Durability : null));
         }
 
         UpdateLimitHint(Tab.Cards, filtered, rows.Count);
@@ -1074,10 +1163,16 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
                 continue;
             }
 
-            SerializableRelic rep = g.Rep;
             rows.Add(new VirtualizedItemGrid.RenderData(g.Name, g.Pool, available,
                 () => WarehouseCache.Resolve(g.IconPath), ExtractionItemTiles.ItemTileAction.Add,
-                () => AddToCarryRelics(rep), g.Rep.Id));
+                () =>
+                {
+                    if (g.Rep.Id is ModelId id)
+                    {
+                        AddToCarryRelics(id);
+                    }
+                },
+                g.Rep.Id, _showDurability ? g.Durability : null));
         }
 
         UpdateLimitHint(Tab.Relics, filtered, rows.Count);
@@ -1123,10 +1218,16 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
                 continue;
             }
 
-            SerializablePotion rep = g.Rep;
             rows.Add(new VirtualizedItemGrid.RenderData(g.Name, g.Pool, available,
                 () => WarehouseCache.Resolve(g.ImagePath), ExtractionItemTiles.ItemTileAction.Add,
-                () => AddToCarryPotions(rep), g.Rep.Id));
+                () =>
+                {
+                    if (g.Rep.Id is ModelId id)
+                    {
+                        AddToCarryPotions(id);
+                    }
+                },
+                g.Rep.Id));
         }
 
         UpdateLimitHint(Tab.Potions, filtered, rows.Count);
@@ -1213,36 +1314,121 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         list.AddChild(empty);
     }
 
-    private void AddToCarryCards(SerializableCard sc)
+    /// <summary>
+    /// Carries the next lowest-durability warehouse copy of <paramref name="id"/> (worst gear first, Tarkov-style —
+    /// the copy most likely to be lost or broken is used before the fresh stock). The draft always holds its own
+    /// clones, so the warehouse instance is never mutated by carrying. 携带该 id 下一份最低耐久的仓库副本（先带最破——最可能
+    /// 战损/遗失的先消耗）。草稿持有自己的克隆，携带永不改动仓库实例。
+    /// </summary>
+    private void AddToCarryCards(ModelId id)
     {
         if (_carry.Cards.Count >= Math.Max(0, ExtractionSettingsPage.Current.MaxCarryCards))
         {
             return;
         }
 
-        _carry.Cards.Add(sc);
+        int carriedCount = _carry.Cards.Count(c => c.Card.Id == id);
+        WarehouseCard? copy = _warehouse.Cards
+            .Where(c => c.Card.Id == id)
+            .OrderBy(c => c.Durability)
+            .Skip(carriedCount)
+            .FirstOrDefault();
+        if (copy == null)
+        {
+            return;
+        }
+
+        _carry.Cards.Add(new WarehouseCard { Card = copy.Card, Durability = copy.Durability });
         Refresh();
     }
 
-    private void AddToCarryRelics(SerializableRelic sr)
+    private void AddToCarryRelics(ModelId id)
     {
         if (_carry.Relics.Count >= Math.Max(0, ExtractionSettingsPage.Current.MaxCarryRelics))
         {
             return;
         }
 
-        _carry.Relics.Add(sr);
+        int carriedCount = _carry.Relics.Count(r => r.Relic.Id == id);
+        WarehouseRelic? copy = _warehouse.Relics
+            .Where(r => r.Relic.Id == id)
+            .OrderBy(r => r.Durability)
+            .Skip(carriedCount)
+            .FirstOrDefault();
+        if (copy == null)
+        {
+            return;
+        }
+
+        _carry.Relics.Add(new WarehouseRelic { Relic = copy.Relic, Durability = copy.Durability });
         Refresh();
     }
 
-    private void AddToCarryPotions(SerializablePotion sp)
+    private void AddToCarryPotions(ModelId id)
     {
         if (_carry.Potions.Count >= 3)
         {
             return;
         }
 
-        _carry.Potions.Add(sp);
+        SerializablePotion? copy = _warehouse.Potions.FirstOrDefault(p => p.Id == id);
+        if (copy == null)
+        {
+            return;
+        }
+
+        _carry.Potions.Add(copy);
+        Refresh();
+    }
+
+    /// <summary>Drops the lowest-durability carried copy of <paramref name="id"/> (removing any copy changes the
+    /// count; the worst-first invariant only constrains additions). 移除该 id 携带副本中最低耐久的一份（移除任意一份只影响
+    /// 数量；先带最破的不变式只约束添加）。</summary>
+    private void RemoveFromCarryCards(ModelId? id)
+    {
+        if (id == null)
+        {
+            return;
+        }
+
+        WarehouseCard? copy = _carry.Cards.Where(c => c.Card.Id == id).OrderBy(c => c.Durability).FirstOrDefault();
+        if (copy != null)
+        {
+            _carry.Cards.Remove(copy);
+        }
+
+        Refresh();
+    }
+
+    private void RemoveFromCarryRelics(ModelId? id)
+    {
+        if (id == null)
+        {
+            return;
+        }
+
+        WarehouseRelic? copy = _carry.Relics.Where(r => r.Relic.Id == id).OrderBy(r => r.Durability).FirstOrDefault();
+        if (copy != null)
+        {
+            _carry.Relics.Remove(copy);
+        }
+
+        Refresh();
+    }
+
+    private void RemoveFromCarryPotions(ModelId? id)
+    {
+        if (id == null)
+        {
+            return;
+        }
+
+        SerializablePotion? copy = _carry.Potions.FirstOrDefault(p => p.Id == id);
+        if (copy != null)
+        {
+            _carry.Potions.Remove(copy);
+        }
+
         Refresh();
     }
 
@@ -1285,6 +1471,11 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         SaveFilters();
         WarehouseStore.Persist();
 
+        // The seed is a session-only, host-owned run parameter; blank means random. Always written (null when blank)
+        // so a stale PendingSeed from a cancelled launch never leaks into the next run.
+        // 种子为仅本次会话、主机所有的跑局参数；留空即随机。无论有无都写入（无则 null），杜绝取消发起残留的旧种子泄漏进下一局。
+        string seed = _seedInput.Text.Trim();
+        ExtractionRunContext.PendingSeed = seed.Length > 0 ? seed : null;
         ExtractionRunContext.IsExtractionLaunch = true;
         CloseHub();
 
