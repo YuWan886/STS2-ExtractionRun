@@ -88,14 +88,17 @@ try {
     [System.IO.File]::WriteAllText($modManifest, $json, (New-Object System.Text.UTF8Encoding($false)))
     Write-Host "Bumped $modId.json version: $oldVersion -> $Tag"
 
+    # The manifest keeps the v-prefixed tag; the csproj <Version> is a NuGet version string and must
+    # NOT keep the leading 'v' — NuGet rejects it (this is what failed the first v0.1.3 run).
+    $nugetVersion = $Tag -replace '^v', ''
     $csprojText = Get-Content $contentProject -Raw
     if ($csprojText -notmatch '<Version>([^<]+)</Version>') {
         throw "Could not locate the <Version> field in $contentProject"
     }
     $oldCsprojVersion = $Matches[1]
-    $csprojText = $csprojText -replace '<Version>[^<]+</Version>', ('<Version>' + $Tag + '</Version>')
+    $csprojText = $csprojText -replace '<Version>[^<]+</Version>', ('<Version>' + $nugetVersion + '</Version>')
     [System.IO.File]::WriteAllText($contentProject, $csprojText, (New-Object System.Text.UTF8Encoding($false)))
-    Write-Host "Bumped $([System.IO.Path]::GetFileName($contentProject)) <Version>: $oldCsprojVersion -> $Tag"
+    Write-Host "Bumped $([System.IO.Path]::GetFileName($contentProject)) <Version>: $oldCsprojVersion -> $nugetVersion"
 
     # ── Build: .pck first, then the multi-version bundle ─────────
     # build-variants.ps1 never touches the .pck (PckPackerEnabled=false), so publish must run
