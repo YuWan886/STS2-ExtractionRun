@@ -60,7 +60,7 @@ Toggling durability requires a confirmation dialog and is blocked while a run or
 ## Compatibility
 
 - **Hextech Runes mod**: the first-time warehouse seed does **not** grant that mod's relics.
-- **联机大厅 mod (STS2-Game-Lobby)**: the lobby's create-room dialog gains a 搜打撤 room type, and the room shows a 搜打撤 pill in the room list; both the host and joining clients are forced to configure their carry first, then run the full extraction inject/consume/deposit loop. Patched from this mod's side only via reflection — no compile-time dependency, and zero side effects when the lobby mod is not installed.
+- **STS2-Game-Lobby**: the lobby's create-room dialog gains a Search-Loot-Extract room type, and the room shows a Search-Loot-Extract pill in the room list; both the host and joining clients are forced to configure their carry first, then run the full extraction inject/consume/deposit loop. Patched from this mod's side only via reflection — no compile-time dependency, and zero side effects when the lobby mod is not installed.
 
 ## Debug Console Commands
 
