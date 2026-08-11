@@ -120,6 +120,23 @@ public static class ExtractionLocalization
         ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.relic.description",
             "Max durability granted to a new relic (all relics share one value).");
 
+    public static ModSettingsText ShopSectionTitleText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.section.shop.title", "Shop");
+
+    public static ModSettingsText ShopPriceMultiplierText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.shop.buyMultiplier", "Buy price multiplier");
+
+    public static ModSettingsText ShopPriceMultiplierDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.shop.buyMultiplier.description",
+            "Multiplier applied to the rolled vanilla shop price when buying.");
+
+    public static ModSettingsText ShopSellRatioText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.shop.sellRatio", "Sell ratio");
+
+    public static ModSettingsText ShopSellRatioDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.shop.sellRatio.description",
+            "Ratio of the vanilla base price paid when selling (before the durability factor).");
+
     public static ModSettingsText ResetSectionTitleText() =>
         ModSettingsText.LocString(SettingsTable, "extractionrun.settings.section.reset.title", "Reset");
 
@@ -156,6 +173,14 @@ public static class ExtractionLocalization
     public static string SearchPlaceholderText() => Text("EXTRACTION_RUN.search.placeholder");
     public static string SearchLimitText(int shownCap, int total) => Formatted("EXTRACTION_RUN.search.limit", shownCap, total);
     public static string SearchNoMatchText(string category) => Formatted("EXTRACTION_RUN.search.emptyTab", category);
+
+    // ----- STS2-Game-Lobby compat 联机大厅兼容 -----
+
+    /// <summary>Room-type option label added to the lobby mod's create-room dialog. 联机大厅建房表单的房间类型项。</summary>
+    public static string LanConnectRoomTypeText() => Text("EXTRACTION_RUN.lanConnect.roomType");
+
+    /// <summary>Room mode label + list pill for an extraction room in the lobby mod. 联机大厅里搜打撤房间的模式标签。</summary>
+    public static string LanConnectModeText() => Text("EXTRACTION_RUN.lanConnect.mode");
 
     public static string FilterPoolText() => Text("EXTRACTION_RUN.filter.pool");
     public static string FilterRarityText() => Text("EXTRACTION_RUN.filter.rarity");
@@ -204,6 +229,31 @@ public static class ExtractionLocalization
 
     /// <summary>Tile badge text for a broken (durability-0) copy. 战损（0 耐久）副本的瓦片角标文本。</summary>
     public static string DurabilityBrokenText() => Text("EXTRACTION_RUN.durability.broken");
+
+    // ----- Shop 商店 -----
+
+    public static string ShopTitleText() => Text("EXTRACTION_RUN.shop.title");
+    public static string ShopTabBuyText() => Text("EXTRACTION_RUN.shop.tab.buy");
+    public static string ShopTabSellText() => Text("EXTRACTION_RUN.shop.tab.sell");
+    public static string ShopOpenButtonText() => Text("EXTRACTION_RUN.shop.button.open");
+    public static string ShopWarehouseButtonText() => Text("EXTRACTION_RUN.shop.button.warehouse");
+    public static string ShopRefreshText(int cost) => Formatted("EXTRACTION_RUN.shop.refresh", cost);
+    public static string ShopBuyEmptyText() => Text("EXTRACTION_RUN.shop.buy.empty");
+    public static string ShopSellEmptyText() => Text("EXTRACTION_RUN.shop.sell.empty");
+    public static string ShopSellSelectedText() => Text("EXTRACTION_RUN.shop.sellSelected");
+    public static string ShopSelectionSummaryText(int count, int gold) =>
+        Formatted("EXTRACTION_RUN.shop.selectionSummary", count, gold);
+    public static string ShopGoldShortText() => Text("EXTRACTION_RUN.toast.goldShort");
+    public static string ShopRefreshedText(int cost) => Formatted("EXTRACTION_RUN.toast.shopRefreshed", cost);
+    public static string ShopBoughtText() => Text("EXTRACTION_RUN.toast.bought");
+    public static string ShopSoldText(int count, int gold) => Formatted("EXTRACTION_RUN.toast.sold", count, gold);
+
+    /// <summary>Sell-tab durability filter title. 出售页耐久度筛选标题。</summary>
+    public static string FilterDurabilityText() => Text("EXTRACTION_RUN.filter.durability");
+
+    /// <summary>Localized label for a sell-tab durability option (full / ge2 / le1). 出售页耐久度选项的本地化标签。</summary>
+    public static string FilterDurabilityLabel(string slug) =>
+        DynamicText("EXTRACTION_RUN.filter.durability." + slug.ToLowerInvariant(), slug);
 
     // ----- Gear code 战备码 -----
 

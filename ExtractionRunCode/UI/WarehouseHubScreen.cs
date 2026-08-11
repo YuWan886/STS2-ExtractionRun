@@ -199,6 +199,14 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         // 原版主菜单返回按钮的 ui_cancel 绑定。
         if (inputEvent is InputEventKey { Pressed: true, Keycode: Key.Escape } key && !key.IsEcho())
         {
+            // ESC while the shop is open closes the shop, not the hub (which is hidden underneath anyway); the shop's
+            // own _Input consumes it first, this guard is just defense against ordering. 商店打开时 ESC 由其自己处理
+            // （只关商店、不关大厅——大厅此时已隐藏）；商店的 _Input 先消费，这里仅作顺序兜底。
+            if (ShopScreen.Current != null)
+            {
+                return;
+            }
+
             OnBack();
             GetViewport().SetInputAsHandled();
         }
@@ -638,6 +646,32 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
                           $"{_carry.Relics.Count}r/{_carry.Potions.Count}p/{_carry.Gold}g).");
     }
 
+    /// <summary>
+    /// Opens the shop against the live warehouse and the hub's carry draft (the SAME draft reference, so the shop
+    /// reads the same warehouse−carry availability the hub shows). Hub filter state is persisted first so nothing is
+    /// lost while the shop takes over; the hub is then HIDDEN — the two pages are exclusive, the shop re-shows it on
+    /// close — and refreshed after every transaction, so returning shows updated gold/stock. 打开商店：对着实时仓库与大厅的
+    /// 携带草稿（同一草稿引用，商店看到与大厅一致的「仓库 − 携带」可用性）。先落盘过滤状态；随后隐藏大厅（两页互斥——商店关闭时
+    /// 恢复），每次交易后刷新，返回时金币/库存都是最新。
+    /// </summary>
+    private void OpenShop()
+    {
+        SaveFilters();
+        WarehouseStore.Persist();
+        // Hide the hub so the shop takes the whole screen instead of stacking on top (the shop re-shows it on close).
+        // 隐藏大厅，让商店独占屏幕而不是叠在大厅之上（商店关闭时恢复）。
+        Visible = false;
+        var shop = new ShopScreen(this, _warehouse, _carry);
+        if (NGame.Instance is NGame game)
+        {
+            game.AddChild(shop);
+        }
+        else
+        {
+            GetTree().Root.AddChild(shop);
+        }
+    }
+
     // ----- Gold stepper (custom SpinBox replacement, fully themeable) -----
 
     private Control BuildGoldRow()
@@ -817,6 +851,22 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         seedRow.SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin;
         seedRow.Visible = !isClient;
         seedHost.AddChild(seedRow);
+
+        // Shop button pinned to the footer's right edge (every mode — a client's shop is their own profile data).
+        // 商店按钮贴靠底部右缘（所有模式——客机的商店是其本地档案数据）。
+        var shopHost = new VBoxContainer
+        {
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            Alignment = BoxContainer.AlignmentMode.Center,
+        };
+        shopHost.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        row.AddChild(shopHost);
+
+        var shopButton = MakeButton(ExtractionLocalization.ShopOpenButtonText(), ExtractionTheme.ButtonSecondary);
+        shopButton.CustomMinimumSize = new Vector2(0f, 44f);
+        shopButton.SizeFlagsHorizontal = Control.SizeFlags.ShrinkEnd;
+        shopButton.Pressed += OpenShop;
+        shopHost.AddChild(shopButton);
 
         footer.AddChild(row);
 

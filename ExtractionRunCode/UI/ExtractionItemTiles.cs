@@ -32,6 +32,10 @@ public static class ExtractionItemTiles
         /// <summary>Carry side: clicking removes one copy. 携带侧：点击移除。</summary>
         Remove,
 
+        /// <summary>Shop buy side: clicking buys the entry (a gold "+"; the count badge is hidden, the price pill shows
+        /// the buy price). 商店购买侧：点击买入（金色 +；数量角标隐藏，价格胶囊显示买价）。</summary>
+        Buy,
+
         /// <summary>Read-only (settlement screens): no affordance, no action. 只读展示。</summary>
         Display,
     }
@@ -335,14 +339,19 @@ public static class ExtractionItemTiles
     /// Builds one item tile: art, name, source pool, quantity badge, an add/remove affordance, and (for cards/relics
     /// with a known durability) a durability badge. Convenience wrapper over <see cref="CreateItemTile"/> +
     /// <see cref="PopulateItemTile"/> for one-shot tiles (carry, settlement). <paramref name="id"/> feeds the tile's
-    /// vanilla hover tip. 构建一张物品卡片：贴图、名称、来源池、数量角标、增删操作，以及（已知耐久的牌/遗物）耐久角标
-    /// （一次性瓦片的便捷封装）；id 供悬停提示使用。
+    /// vanilla hover tip; <paramref name="price"/> shows a gold price pill (shop buy price / group sell value);
+    /// <paramref name="selectedCount"/> highlights the tile for multi-select (primary border + a green count glyph);
+    /// 0 means not selected.
+    /// 构建一张物品卡片：贴图、名称、来源池、数量角标、增删操作，以及（已知耐久的牌/遗物）耐久角标（一次性瓦片的便捷封装）；
+    /// id 供悬停提示使用；price 显示金色价格胶囊（商店买价/分组卖价）；selectedCount 高亮瓦片表示多选（主题蓝描边 + 绿色份数角标）；
+    /// 0 表示未选中。
     /// </summary>
     public static Button MakeItemTile(string name, string pool, int count, Texture2D? texture,
-        ItemTileAction action, Action? onClick, ModelId? id, int? durability = null)
+        ItemTileAction action, Action? onClick, ModelId? id, int? durability = null, int? price = null,
+        int selectedCount = 0)
     {
         Button button = CreateItemTile();
-        PopulateItemTile(button, name, pool, count, texture, action, id, durability);
+        PopulateItemTile(button, name, pool, count, texture, action, id, durability, price, selectedCount);
         if (onClick != null)
         {
             button.Pressed += onClick;
@@ -462,6 +471,26 @@ public static class ExtractionItemTiles
         poolLabel.AddThemeColorOverride("font_color", ExtractionTheme.TextSecondary);
         vbox.AddChild(poolLabel);
 
+        // Price pill (bottom of the tile): a compact gold chip for shop tiles (buy price / group sell value),
+        // hidden for warehouse/settlement tiles (a hidden control contributes zero layout size).
+        // 价格胶囊（瓦片底部）：商店瓦片用的紧凑金色胶囊（买价/分组卖价），仓库/结算瓦片隐藏（隐藏控件不占布局）。
+        var pricePill = new PanelContainer
+        {
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter,
+        };
+        pricePill.AddThemeStyleboxOverride("panel", ExtractionTheme.PriceBox());
+        var priceLabel = new Label
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        priceLabel.AddThemeFontSizeOverride("font_size", 12);
+        priceLabel.AddThemeColorOverride("font_color", ExtractionTheme.GoldChipText);
+        pricePill.AddChild(priceLabel);
+        vbox.AddChild(pricePill);
+
         // Quantity badge (top-right, always visible).
         var badge = new PanelContainer
         {
@@ -504,26 +533,32 @@ public static class ExtractionItemTiles
         button.SetMeta("_pool", poolLabel);
         button.SetMeta("_art", art);
         button.SetMeta("_badge", badgeLabel);
+        button.SetMeta("_badgePill", badge);
         button.SetMeta("_glyph", glyph);
         button.SetMeta("_glyphLabel", glyphLabel);
         button.SetMeta("_durability", durabilityLabel);
         button.SetMeta("_durabilityPill", durabilityPill);
+        button.SetMeta("_pricePill", pricePill);
+        button.SetMeta("_priceLabel", priceLabel);
         button.MouseEntered += () => ExtractionItemTooltip.Show(button);
         button.MouseExited += () => ExtractionItemTooltip.Hide(button);
         return button;
     }
 
     /// <summary>
-    /// Re-binds a pooled tile to new data (name / pool / count / texture / action / tooltip id / durability).
-    /// Idempotent — safe to call on an already-populated tile. A tooltip open for the previous item is closed when the
-    /// id changes (a recycled tile would otherwise keep showing stale content). The durability pill is hidden for
-    /// potions and no-durability mode (null) and value-coded when shown: white ≥ 2, amber at 1 (one extraction from
-    /// breaking), red "Broken" for 0 (a broken-copy display).
-    /// 把池化瓦片重新绑定到新数据（名称/池/数量/贴图/角色/提示 id/耐久）。换 id 时关闭旧物品的悬停提示。耐久胶囊对药水与
-    /// 无耐久模式隐藏（null），显示时按剩余值分级：≥2 近白，1 琥珀（再撤一次即战损），0（战损副本展示）为红色「耗尽」。
+    /// Re-binds a pooled tile to new data (name / pool / count / texture / action / tooltip id / durability / price /
+    /// selection). Idempotent — safe to call on an already-populated tile. A tooltip open for the previous item is
+    /// closed when the id changes (a recycled tile would otherwise keep showing stale content). The durability pill is
+    /// hidden for potions and no-durability mode (null) and value-coded when shown: white ≥ 2, amber at 1 (one
+    /// extraction from breaking), red "Broken" for 0 (a broken-copy display). A buy tile hides its count badge (one
+    /// copy per slot) and shows the price pill instead. A selected tile gets a primary border and a green count glyph
+    /// (multi-select); a selected Display tile otherwise keeps no glyph.
+    /// 把池化瓦片重新绑定到新数据（名称/池/数量/贴图/角色/提示 id/耐久/价格/选中数）。换 id 时关闭旧物品的悬停提示。
+    /// 耐久胶囊对药水与无耐久模式隐藏（null），显示时按剩余值分级：≥2 近白，1 琥珀（再撤一次即战损），0（战损副本展示）为红色
+    /// 「耗尽」。购买瓦片隐藏数量角标（每槽一份）并改显价格胶囊。选中瓦片加主题蓝描边 + 绿色份数角标（多选，0 表示未选中）。
     /// </summary>
     public static void PopulateItemTile(Button button, string name, string pool, int count, Texture2D? texture,
-        ItemTileAction action, ModelId? id, int? durability = null)
+        ItemTileAction action, ModelId? id, int? durability = null, int? price = null, int selectedCount = 0)
     {
         if (ExtractionItemTooltip.SetItem(button, id))
         {
@@ -533,7 +568,14 @@ public static class ExtractionItemTiles
         GetMetaLabel(button, "_name").Text = name;
         GetMetaLabel(button, "_pool").Text = pool;
         GetMetaNode<TextureRect>(button, "_art").Texture = texture;
-        GetMetaLabel(button, "_badge").Text = $"×{count}";
+
+        // Count badge: hidden for buy tiles (a shop slot holds one copy; the price pill carries the number).
+        bool showCount = action != ItemTileAction.Buy;
+        GetMetaNode<PanelContainer>(button, "_badgePill").Visible = showCount;
+        if (showCount)
+        {
+            GetMetaLabel(button, "_badge").Text = $"×{count}";
+        }
 
         Label durabilityLabel = GetMetaLabel(button, "_durability");
         PanelContainer durabilityPill = GetMetaNode<PanelContainer>(button, "_durabilityPill");
@@ -550,12 +592,47 @@ public static class ExtractionItemTiles
             durabilityPill.Visible = false;
         }
 
+        // Price pill (shop tiles only).
+        PanelContainer pricePill = GetMetaNode<PanelContainer>(button, "_pricePill");
+        if (price.HasValue)
+        {
+            GetMetaLabel(button, "_priceLabel").Text = price.Value.ToString();
+            pricePill.Visible = true;
+        }
+        else
+        {
+            pricePill.Visible = false;
+        }
+
         bool display = action == ItemTileAction.Display;
+        bool buy = action == ItemTileAction.Buy;
         bool add = action == ItemTileAction.Add;
         var glyph = GetMetaNode<PanelContainer>(button, "_glyph");
-        glyph.Visible = !display;
-        glyph.AddThemeStyleboxOverride("panel", ExtractionTheme.GlyphBox(add));
-        GetMetaLabel(button, "_glyphLabel").Text = add ? "+" : "-";
+        if (selectedCount > 0)
+        {
+            // Multi-select highlight: primary border + green count glyph (how many copies of the group are selected);
+            // the add/remove/buy glyph is replaced. The round chip widens by digit count so multi-digit counts aren't
+            // clipped (one digit = 24px, +10px each). 多选高亮：主题蓝描边 + 绿色份数角标（该组选中了几件），替换增删/购买角标。
+            // 圆形角标按位数加宽（1 位 24px，每多一位 +10px），避免多位数字被裁切。
+            button.AddThemeStyleboxOverride("normal", ExtractionTheme.SelectedTileBox());
+            glyph.Visible = true;
+            glyph.AddThemeStyleboxOverride("panel", ExtractionTheme.SelectedGlyphBox());
+            Label glyphLabel = GetMetaLabel(button, "_glyphLabel");
+            string countText = selectedCount.ToString();
+            glyphLabel.Text = countText;
+            glyphLabel.AddThemeColorOverride("font_color", Colors.White);
+            glyph.Size = new Vector2(24f + Math.Max(0, countText.Length - 1) * 10f, 24f);
+        }
+        else
+        {
+            button.RemoveThemeStyleboxOverride("normal");
+            glyph.Visible = !display;
+            glyph.AddThemeStyleboxOverride("panel", ExtractionTheme.GlyphBox(add || buy));
+            GetMetaLabel(button, "_glyphLabel").Text = buy ? "+" : add ? "+" : "-";
+            // Reset the chip to the default square width for a recycled tile that just showed a multi-digit count.
+            // 回收瓦片从多位数状态回到未选中时，把角标复位为默认宽度。
+            glyph.Size = new Vector2(24f, 24f);
+        }
     }
 
     private static Label GetMetaLabel(Button button, string key) => button.GetMeta(key).As<Label>();

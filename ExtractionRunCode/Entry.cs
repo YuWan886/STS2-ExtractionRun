@@ -30,6 +30,7 @@ public static class Entry
         {
             WarehouseStore.Register();
             PendingCarryStore.Register();
+            ShopStore.Register();
             ExtractionRunData.Register();
             ExtractionSettingsPage.Register();
         }
@@ -42,6 +43,10 @@ public static class Entry
         // Some hosts (beta) reject modifier/seed changes on the character-select lobby; adapt at runtime.
         ModifierChangeCompat.InstallIfNeeded(harmony);
         SeedChangeCompat.InstallIfNeeded(harmony);
+
+        // The STS2-Game-Lobby mod can host extraction rooms; bridge its create flow into the launch chain when present.
+        // 联机大厅 mod 可托管搜打撤房间；检测到它时把其建房流程桥接进开跑链路。
+        LanConnectCompat.InstallIfNeeded(harmony);
 
         Logger.Info("ExtractionRun initialized.");
     }

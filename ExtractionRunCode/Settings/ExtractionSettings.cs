@@ -53,6 +53,13 @@ public sealed class ExtractionSettings
     /// <summary>Max durability granted to a new relic (all relics share one value). 新入遗物的耐久上限（遗物统一）。</summary>
     public int RelicDurability { get; set; } = 3;
 
+    /// <summary>Buy-price multiplier for the hub shop (rolled vanilla price × this). 商店买入价倍率（roll 价 × 此值）。</summary>
+    public double ShopPriceMultiplier { get; set; } = 2.0;
+
+    /// <summary>Sell ratio for the hub shop (deterministic vanilla base price × this, before the durability factor).
+    /// 商店卖出比例（确定性原版基准价 × 此值，再乘耐久系数）。</summary>
+    public double ShopSellRatio { get; set; } = 0.5;
+
     public void ResetToDefaults()
     {
         MaxCarryCards = 10;
@@ -68,5 +75,7 @@ public sealed class ExtractionSettings
         CardDurabilityAncient = 1;
         CardDurabilityOther = 1;
         RelicDurability = 3;
+        ShopPriceMultiplier = 2.0;
+        ShopSellRatio = 0.5;
     }
 }

@@ -234,4 +234,30 @@ public sealed class WarehouseFilterState
     public List<string> PotionPools { get; set; } = new();
     public List<string> PotionRarities { get; set; } = new();
     public List<string> PotionSources { get; set; } = new();
+
+    // ----- Shop sell-tab filter/search state (per kind, independent of the warehouse tabs) -----
+
+    public string SellQueryCards { get; set; } = "";
+    public string SellQueryRelics { get; set; } = "";
+    public string SellQueryPotions { get; set; } = "";
+
+    public List<string> SellCardPools { get; set; } = new();
+    public List<string> SellCardRarities { get; set; } = new();
+    public List<string> SellCardTypes { get; set; } = new();
+    public List<string> SellCardCosts { get; set; } = new();
+    public List<string> SellCardSources { get; set; } = new();
+
+    public List<string> SellRelicPools { get; set; } = new();
+    public List<string> SellRelicRarities { get; set; } = new();
+    public List<string> SellRelicSources { get; set; } = new();
+
+    public List<string> SellPotionPools { get; set; } = new();
+    public List<string> SellPotionRarities { get; set; } = new();
+    public List<string> SellPotionSources { get; set; } = new();
+
+    /// <summary>Durability filter selections for the sell tab (cards and relics; potions have no durability).
+    /// Options: "full" (every copy at its rarity max), "ge2" (min durability ≥ 2), "le1" (min durability ≤ 1).
+    /// 出售页的耐久度筛选（卡牌与遗物；药水无耐久）。选项：full（全部满耐久）、ge2（最低耐久 ≥2）、le1（最低耐久 ≤1）。</summary>
+    public List<string> SellCardDurabilities { get; set; } = new();
+    public List<string> SellRelicDurabilities { get; set; } = new();
 }

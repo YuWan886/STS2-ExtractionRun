@@ -65,6 +65,9 @@ public static class ExtractionTheme
     /// <summary>Warning tone (empty-carry start hint). 警示色（空携带提示）。</summary>
     public static readonly Color Danger = new("E5484D");
 
+    /// <summary>Sell-selection count green (glyph chip shows how many copies are selected). 出售选中数绿色（角标显示选中份数）。</summary>
+    public static readonly Color SellSelectedGreen = new("4ADE80");
+
     public const int FontSizeBody = 16;
     public const int FontSizeSmall = 14;
     public const int FontSizeTitle = 26;
@@ -244,6 +247,24 @@ public static class ExtractionTheme
     {
         return Box(add ? Primary : new Color("4A5568"), radius: 999);
     }
+
+    /// <summary>Circular selected-count chip (green — the sell multi-select shows the count, not a check).
+    /// 选中数圆形角标（绿——出售多选显示份数而非对勾）。</summary>
+    public static StyleBoxFlat SelectedGlyphBox() => Box(SellSelectedGreen, radius: 999);
+
+    /// <summary>Compact gold pill for the shop tile price. 商店瓦片的价格胶囊。</summary>
+    public static StyleBoxFlat PriceBox()
+    {
+        StyleBoxFlat sb = Box(GoldChip, radius: 999, border: GoldChipBorder, borderWidth: 1);
+        sb.ContentMarginLeft = 8;
+        sb.ContentMarginRight = 8;
+        sb.ContentMarginTop = 2;
+        sb.ContentMarginBottom = 2;
+        return sb;
+    }
+
+    /// <summary>Selected (multi-select) item tile surface: primary border on the raised card. 选中瓦片表面（主题蓝描边）。</summary>
+    public static StyleBoxFlat SelectedTileBox() => Box(CardRaised, radius: 10, border: Primary, borderWidth: 2, shadowSize: 3);
 
     /// <summary>Search input surface: dark card, primary border + slightly raised fill while focused. 搜索输入框表面。</summary>
     private static StyleBoxFlat LineEditBox(bool focused)

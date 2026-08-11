@@ -26,11 +26,24 @@ public static class ExtractionRunContext
     /// null 表示随机。开跑前由 CharacterSelectPatch 注入大厅。</summary>
     public static string? PendingSeed { get; set; }
 
+    /// <summary>
+    /// Set only by the STS2-Game-Lobby compat when the host creates an extraction room: the room's ENet host and
+    /// lobby are already live before the character-select init, so the host has had no chance to configure a carry in
+    /// the warehouse hub. Consumed by <c>CharacterSelectPatch</c> right after it stages the pending carry and applies
+    /// the modifier, which then forces the carry-config modal over the character-select screen. The base host-submenu
+    /// flow never sets this (the hub ran before launch).
+    /// 仅由联机大厅兼容在主机创建搜打撤房间时置位：房间的 ENet host 与大厅在角色选择初始化前就已就绪，主机没机会先在仓库配置携带。
+    /// 由 CharacterSelectPatch 在暂存携带并应用修正项后消费，随即在角色选择屏上强制弹出携带配置模态。主菜单主机子菜单流程不会置位
+    /// （该流程先开仓库再发起）。
+    /// </summary>
+    public static bool HostCarrySetupRequired { get; set; }
+
     /// <summary>Clears the launch flow state (after a run starts or the flow is cancelled).</summary>
     public static void Clear()
     {
         IsExtractionLaunch = false;
         PendingRunModifiers = null;
         PendingSeed = null;
+        HostCarrySetupRequired = false;
     }
 }

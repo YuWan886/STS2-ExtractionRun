@@ -29,10 +29,20 @@ On first use, the warehouse is seeded with all Basic and Common cards, all Start
 - **Durability**: every card and relic copy carries durability. Each successful extraction decrements the carried-and-returned copies by 1; a copy reaching 0 breaks and is not deposited. Death or abandon loses the loadout outright (consumed at run start — durability never decrements on a loss). Tiles show the group's lowest remaining durability (amber "Durability n" badge); 0 shows a red "Broken" badge. Can be disabled entirely (see Settings).
 - **Clear reward**: every victory grants the character's full starting deck and starting relics, keeping your baseline kit renewable for future runs.
 - **Warehouse hub**: three tabs (cards / relics / potions), each with its own search box and multi-select filters (source pool, rarity, type, cost), a virtualized grid that stays smooth with large warehouses, and background art preloading.
+- **Hub shop**: the "Shop" button at the bottom-right of the warehouse hub opens a two-tab shop (Buy / Sell). Stock re-rolls once per real calendar day, or on demand for a fee — see the Shop section below.
 - **Extraction report**: an "Extraction Report" button on the game-over screen shows exactly what was deposited or lost.
 - **Run seed**: set a custom run seed in the hub's footer before starting — the input is canonicalized live (uppercase, O→0, I→1) with a clear button; blank = random, matching the base game's custom-run field. The seed is a session-only, host-owned run parameter, never persisted with the carry; in MP the whole party follows the host's seed.
 - **Singleplayer & multiplayer**: both work; in MP, each player's loadout is settled independently per their own settings.
 - **Settings page**: sliders for max carried cards (0–20) and max carried relics (0–6), plus a one-click reset.
+
+## Shop
+
+The "Shop" button at the bottom-right of the warehouse hub opens the shop (ESC or the bottom-left "Warehouse" button returns). It shares the same live data as the hub — gold, stock and the carry draft — with the current warehouse gold always shown top-right. Two main tabs:
+
+- **Buy**: three stacked sections (cards / relics / potions). The stock re-rolls in full on the first open of each real calendar day; prices are rolled from the vanilla base price with variance (±5% cards/potions, ±15% relics) and **frozen for the day**. Buy price = the day's frozen price × the buy-multiplier setting (default ×2.0), and bought items are deposited at full durability. Sold-out slots stay empty until the next refresh. You can also re-roll the whole stock for a fee (50 → +50 → cap 250, resets daily).
+- **Sell**: shows the available "warehouse − carry" items with per-copy multi-select (left-click picks one copy, right-click removes one, Shift selects/deselects the whole group), plus search and multi-select filters (source pool, rarity, type, cost, durability). Sell value = the deterministic vanilla base price × the sell-ratio setting (default 50%) × a durability factor (durability / rarity max, floored, minimum 1 gold; potions and no-durability mode factor 1) — the more worn a copy, the less it's worth, and the most worn copies are sold first.
+
+The shop and the hub are mutually exclusive: opening the shop hides the hub, closing it restores and refreshes the hub so gold and stock always stay consistent.
 
 ## Settings
 
@@ -41,6 +51,8 @@ On first use, the warehouse is seeded with all Basic and Common cards, all Start
 - **Hover tooltips**: whether hovering card / relic / potion tiles shows the vanilla tooltip (default on).
 - **Durability**: master toggle, default on. Disabling switches the warehouse to a disposable no-durability copy (copies never decrement, nothing is shown); re-enabling returns to the previously frozen durability warehouse, discarding any no-durability progress.
 - **Durability caps**: the max durability granted to newly deposited items (new deposits only — existing copies are never retroactively changed), each a 1–20 slider — starter 5 / common 4 / uncommon 3 / rare 2 / ancient 1 / other 1 (event, token, status, curse, quest and mod cards) / relic 3.
+- **Shop buy multiplier**: buy price = the day's frozen price × this, a ×1.0–×5.0 slider, default ×2.0.
+- **Shop sell ratio**: sell value = the vanilla base price × this (before the durability factor), a 10%–100% slider, default 50%.
 - **Reset to defaults**: restores every setting.
 
 Toggling durability requires a confirmation dialog and is blocked while a run or a character-select lobby is active (the carry is already staged and can't be retracted). Settings are stored at global scope, shared across all saves.
@@ -48,6 +60,7 @@ Toggling durability requires a confirmation dialog and is blocked while a run or
 ## Compatibility
 
 - **Hextech Runes mod**: the first-time warehouse seed does **not** grant that mod's relics.
+- **联机大厅 mod (STS2-Game-Lobby)**: the lobby's create-room dialog gains a 搜打撤 room type, and the room shows a 搜打撤 pill in the room list; both the host and joining clients are forced to configure their carry first, then run the full extraction inject/consume/deposit loop. Patched from this mod's side only via reflection — no compile-time dependency, and zero side effects when the lobby mod is not installed.
 
 ## Debug Console Commands
 

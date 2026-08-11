@@ -150,6 +150,28 @@
   "EXTRACTION_RUN.durability.disable.body": "关闭耐久后，当前耐久仓库将被冻结并复制为无耐久版本；重新开启时回到冻结前的仓库。",
   "EXTRACTION_RUN.durability.blocked": "跑局或大厅进行中无法切换耐久模式。",
 
+  "EXTRACTION_RUN.shop.title": "搜打撤·商店",
+  "EXTRACTION_RUN.shop.tab.buy": "购买",
+  "EXTRACTION_RUN.shop.tab.sell": "出售",
+  "EXTRACTION_RUN.shop.button.open": "商店",
+  "EXTRACTION_RUN.shop.button.warehouse": "仓库",
+  "EXTRACTION_RUN.shop.refresh": "刷新商店（{0} 金）",
+  "EXTRACTION_RUN.shop.buy.empty": "今日已售罄，明天再来或刷新商店",
+  "EXTRACTION_RUN.shop.sell.empty": "无可出售",
+  "EXTRACTION_RUN.shop.sellSelected": "出售所选",
+  "EXTRACTION_RUN.shop.selectionSummary": "已选 {0} 件 · 合计 {1} 金",
+  "EXTRACTION_RUN.filter.durability": "耐久",
+  "EXTRACTION_RUN.filter.durability.full": "完整",
+  "EXTRACTION_RUN.filter.durability.ge2": "耐久≥2",
+  "EXTRACTION_RUN.filter.durability.le1": "耐久≤1",
+  "EXTRACTION_RUN.toast.goldShort": "仓库金币不足",
+  "EXTRACTION_RUN.toast.shopRefreshed": "商店已刷新（花费 {0} 金）",
+  "EXTRACTION_RUN.toast.bought": "已购买并存入仓库",
+  "EXTRACTION_RUN.toast.sold": "已出售 {0} 件，获得 {1} 金",
+
+  "EXTRACTION_RUN.lanConnect.roomType": "搜打撤",
+  "EXTRACTION_RUN.lanConnect.mode": "搜打撤",
+
   "EXTRACTION_RUN.toast.deposit": "撤离成功！战利品已存入仓库。",
   "EXTRACTION_RUN.toast.firstSeed": "已为仓库发放初始与普通卡牌、遗物及 1000 金币。"
 }

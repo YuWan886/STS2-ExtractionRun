@@ -16,13 +16,23 @@ public sealed partial class VirtualizedItemGrid : Control
     private const float Gap = 8f;
 
     /// <summary>A tile's render payload. Texture is a resolver so the preload path can fill art in place; durability
-    /// is the tile's durability badge (null hides it — potions / no-durability mode).
-    /// 单瓦片渲染数据；贴图为解析器，供预载路径原地补图；耐久为瓦片耐久角标（null 隐藏——药水/无耐久模式）。</summary>
+    /// is the tile's durability badge (null hides it — potions / no-durability mode); price is the gold price pill
+    /// (shop buy price / group sell value); selectedCount shows how many copies of the group are selected — 0 means
+    /// not selected, otherwise the tile gets the selected border + a green count glyph. <c>OnClick</c> fires on
+    /// press; when <c>OnTileClick</c> is set it receives the tile button itself (e.g. to shake it on a failed buy);
+    /// <c>OnRightClick</c> fires on a right-click (the shop sell tiles use it to deselect copies).
+    /// 单瓦片渲染数据；贴图为解析器，供预载路径原地补图；耐久为瓦片耐久角标（null 隐藏——药水/无耐久模式）；price 为金色
+    /// 价格胶囊（商店买价/分组卖价）；selectedCount 表示该组选中份数——0 表示未选中，否则瓦片加选中描边 + 绿色份数角标。
+    /// OnClick 在按下时触发；设置 OnTileClick 时回调接收瓦片按钮本身（如购买失败时晃动它）；OnRightClick 在右键时触发
+    /// （商店出售瓦片用它来减少选中数）。</summary>
     public sealed record RenderData(string Name, string Pool, int Count, Func<Texture2D?> Texture,
-        ExtractionItemTiles.ItemTileAction Action, Action? OnClick, ModelId? Id, int? Durability = null);
+        ExtractionItemTiles.ItemTileAction Action, Action? OnClick, ModelId? Id, int? Durability = null,
+        int? Price = null, int SelectedCount = 0, Action<Button>? OnTileClick = null, Action? OnRightClick = null);
 
     private readonly List<Button> _pool = new();
     private readonly Dictionary<Button, Action?> _callbacks = new();
+    private readonly Dictionary<Button, Action<Button>?> _tileCallbacks = new();
+    private readonly Dictionary<Button, Action?> _rightCallbacks = new();
     private readonly List<(int Index, Button Tile)> _active = new();
 
     private IReadOnlyList<RenderData> _items = Array.Empty<RenderData>();
@@ -163,8 +173,10 @@ public sealed partial class VirtualizedItemGrid : Control
         float stride = ExtractionItemTiles.TileHeight + Gap;
         tile.Position = new Vector2(col * (ExtractionItemTiles.TileWidth + Gap), row * stride);
         ExtractionItemTiles.PopulateItemTile(tile, data.Name, data.Pool, data.Count, data.Texture(), data.Action,
-            data.Id, data.Durability);
+            data.Id, data.Durability, data.Price, data.SelectedCount);
+        _tileCallbacks[tile] = data.OnTileClick;
         _callbacks[tile] = data.OnClick;
+        _rightCallbacks[tile] = data.OnRightClick;
         tile.Visible = true;
     }
 
@@ -181,9 +193,26 @@ public sealed partial class VirtualizedItemGrid : Control
         // One handler reads the current callback so recycled tiles never accumulate event subscriptions.
         tile.Pressed += () =>
         {
+            if (_tileCallbacks.TryGetValue(tile, out Action<Button>? tileCallback) && tileCallback != null)
+            {
+                tileCallback(tile);
+                return;
+            }
+
             if (_callbacks.TryGetValue(tile, out Action? callback))
             {
                 callback?.Invoke();
+            }
+        };
+        // Right-click is not consumed by a Button's Pressed (left-click only), so catch it here for the sell
+        // deselect handlers. Recycled tiles read the current callback, matching the Pressed pattern.
+        tile.GuiInput += e =>
+        {
+            if (e is InputEventMouseButton { ButtonIndex: MouseButton.Right, Pressed: true }
+                && _rightCallbacks.TryGetValue(tile, out Action? right) && right != null)
+            {
+                right();
+                tile.AcceptEvent();
             }
         };
         AddChild(tile);
@@ -194,7 +223,9 @@ public sealed partial class VirtualizedItemGrid : Control
     {
         ExtractionItemTooltip.Hide(tile);
         tile.Visible = false;
+        _tileCallbacks[tile] = null;
         _callbacks[tile] = null;
+        _rightCallbacks[tile] = null;
         _pool.Add(tile);
     }
 

@@ -122,6 +122,17 @@ public static class CharacterSelectPatch
                 Entry.Logger.Info($"CharacterSelectPatch: applied run seed {seed} to extraction lobby.");
             }
 
+            // A lobby-flow host created the room before any warehouse-hub setup, so force the carry-config modal now
+            // (reuses the client modal semantics: confirm re-stages the carry into the lobby, back pops the
+            // character-select screen which disconnects the host session and deletes the room).
+            // 联机大厅建房流里主机没机会先配置携带，此处强制弹出携带配置模态（复用客机模态语义：确认重暂存携带进大厅，
+            // 返回弹出角色选择屏断开主机会话并删除房间）。
+            if (ExtractionRunContext.HostCarrySetupRequired)
+            {
+                ExtractionRunContext.HostCarrySetupRequired = false;
+                OpenCarrySetupModal(screen, lobby);
+            }
+
             Entry.Logger.Info("CharacterSelectPatch: extraction modifier applied to lobby.");
         }
         else if (!isHost && ExtractionCarrySync.HasExtractionModifier(lobby.Modifiers))
@@ -135,7 +146,7 @@ public static class CharacterSelectPatch
             // 客机加入搜打撤房间：强制打开仓库界面，配置完成后才能进入大厅。携带只在该模态「确认」时暂存进大厅
             // （ConfirmCarryForClient），此处不暂存——否则会把确认前的旧携带推到主机，若确认重暂存推送失败，开跑
             // 就会消耗这份陈旧携带而非客机真正确认的内容，造成物资被吞。
-            OpenClientWarehouseHub(screen, lobby);
+            OpenCarrySetupModal(screen, lobby);
         }
         else
         {
@@ -143,7 +154,13 @@ public static class CharacterSelectPatch
         }
     }
 
-    private static void OpenClientWarehouseHub(NCharacterSelectScreen screen, StartRunLobby lobby)
+    /// <summary>
+    /// Forces the warehouse hub as a modal over the character-select screen. Used by a client who joined an extraction
+    /// room and — in the STS2-Game-Lobby flow — by the host who created one (the room was already published before any
+    /// hub setup). The modal's confirm persists the draft and re-stages it into the lobby; back pops the screen.
+    /// 在角色选择屏上强制弹出仓库配置模态：客机加入搜打撤房间时；以及联机大厅建房流的主机（房间已发布、主机尚未配置携带）。
+    /// 模态确认持久化草稿并重暂存进大厅；返回弹出该屏。</summary>
+    private static void OpenCarrySetupModal(NCharacterSelectScreen screen, StartRunLobby lobby)
     {
         NGame? game = NGame.Instance;
         if (game == null)
@@ -153,6 +170,6 @@ public static class CharacterSelectPatch
 
         var hub = new WarehouseHubScreen(screen._stack, null, WarehouseHubScreen.HubMode.MultiplayerClient, lobby);
         game.AddChild(hub);
-        Entry.Logger.Info("CharacterSelectPatch: joined an extraction room — showing client warehouse hub.");
+        Entry.Logger.Info("CharacterSelectPatch: showing carry setup modal over character select.");
     }
 }

@@ -107,6 +107,16 @@ public static class ExtractionSettingsPage
         static s => s.RelicDurability,
         static (s, v) => s.RelicDurability = v);
 
+    private static readonly ModSettingsValueBinding<ExtractionSettings, double> ShopPriceMultiplierBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.ShopPriceMultiplier,
+        static (s, v) => s.ShopPriceMultiplier = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, double> ShopSellRatioBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.ShopSellRatio,
+        static (s, v) => s.ShopSellRatio = v);
+
     public static ExtractionSettings Current =>
         RitsuLibFramework.GetDataStore(Entry.ModId).Get<ExtractionSettings>(DataKey);
 
@@ -160,6 +170,14 @@ public static class ExtractionSettingsPage
                 .AddIntSlider("durability_relic", ExtractionLocalization.DurabilityRelicText(),
                     RelicDurabilityBinding, MinDurabilitySlider, MaxDurabilitySlider, 1,
                     description: ExtractionLocalization.DurabilityRelicDescriptionText()))
+            .AddSection("shop", section => section
+                .WithTitle(ExtractionLocalization.ShopSectionTitleText())
+                .AddSlider("shop_buy_multiplier", ExtractionLocalization.ShopPriceMultiplierText(),
+                    ShopPriceMultiplierBinding, 1.0, 5.0, 0.1,
+                    static d => $"×{d:0.0}", description: ExtractionLocalization.ShopPriceMultiplierDescriptionText())
+                .AddSlider("shop_sell_ratio", ExtractionLocalization.ShopSellRatioText(),
+                    ShopSellRatioBinding, 0.1, 1.0, 0.05,
+                    static d => $"{d:P0}", description: ExtractionLocalization.ShopSellRatioDescriptionText()))
             .AddSection("reset", section => section
                 .WithTitle(ExtractionLocalization.ResetSectionTitleText())
                 .AddButton(
@@ -290,6 +308,10 @@ public static class ExtractionSettingsPage
             CardDurabilityOtherBinding.Save();
             RelicDurabilityBinding.Write(Current.RelicDurability);
             RelicDurabilityBinding.Save();
+            ShopPriceMultiplierBinding.Write(Current.ShopPriceMultiplier);
+            ShopPriceMultiplierBinding.Save();
+            ShopSellRatioBinding.Write(Current.ShopSellRatio);
+            ShopSellRatioBinding.Save();
         }
         finally
         {

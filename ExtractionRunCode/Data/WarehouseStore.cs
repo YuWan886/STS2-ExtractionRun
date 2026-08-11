@@ -516,6 +516,62 @@ public static class WarehouseStore
     }
 
     /// <summary>
+    /// Sells the given EXACT copies out of the warehouse (matched by id + durability, like <see cref="ConsumeCarried"/>)
+    /// and credits the proceeds to the warehouse balance. The caller computes which copies to sell — the shop sells
+    /// only non-carried copies, so it cannot reuse the plain <c>Remove*</c> helpers (which would scrape a carried copy).
+    /// 把给定的"精确副本"从仓库卖出（按 id + 耐久匹配，同 ConsumeCarried）并把所得计入仓库余额。卖哪几份由调用方算好——
+    /// 商店只卖未携带的副本，因此不能复用 Remove*（那会把携带中的那份也刮掉）。
+    /// </summary>
+    public static void Sell(IReadOnlyList<WarehouseCard>? cards, IReadOnlyList<WarehouseRelic>? relics,
+        IReadOnlyList<SerializablePotion>? potions, int gold)
+    {
+        var store = RitsuLibFramework.GetDataStore(Entry.ModId);
+        store.Modify<WarehouseData>(ActiveKey, data =>
+        {
+            data.Version++;
+
+            if (cards != null)
+            {
+                foreach (WarehouseCard sold in cards)
+                {
+                    int index = data.Cards.FindIndex(c => c.Card.Id == sold.Card.Id && c.Durability == sold.Durability);
+                    if (index >= 0)
+                    {
+                        data.Cards.RemoveAt(index);
+                    }
+                }
+            }
+
+            if (relics != null)
+            {
+                foreach (WarehouseRelic sold in relics)
+                {
+                    int index = data.Relics.FindIndex(r => r.Relic.Id == sold.Relic.Id && r.Durability == sold.Durability);
+                    if (index >= 0)
+                    {
+                        data.Relics.RemoveAt(index);
+                    }
+                }
+            }
+
+            if (potions != null)
+            {
+                foreach (SerializablePotion sold in potions)
+                {
+                    int index = data.Potions.FindIndex(p => p.Id == sold.Id);
+                    if (index >= 0)
+                    {
+                        data.Potions.RemoveAt(index);
+                    }
+                }
+            }
+
+            data.Gold = ClampGold(data.Gold + gold);
+        });
+        store.Save(ActiveKey);
+    }
+
+    /// <summary>
     /// Removes up to <paramref name="count"/> copies of the given card id from the warehouse, lowest durability first
     /// (scrap the most-worn gear first). Returns the number actually removed.
     /// 从仓库移除最多 count 张指定卡牌（最低耐久优先），返回实际移除数。</summary>
