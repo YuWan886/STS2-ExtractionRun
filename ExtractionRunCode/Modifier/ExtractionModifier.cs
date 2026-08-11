@@ -54,6 +54,12 @@ public sealed class ExtractionModifier : ModifierModel
                 {
                     CardModel card = starter.ToMutable();
                     card.FloorAddedToDeck = 1;
+                    // Unlike the carried path (runState.LoadCard assigns the owner internally), these fallback cards
+                    // skip the run-creation owner pass, so they must be registered here or the first hook iteration
+                    // NREs on card.Owner.IsActiveForHooks (RunState.IterateHookListeners → Contains).
+                    // 与携带路径不同（LoadCard 内部已赋 Owner），此处绕过开跑赋主流程，必须显式注册，
+                    // 否则首次钩子遍历在 card.Owner.IsActiveForHooks 处空引用崩溃。
+                    runState.AddCard(card, player);
                     player.Deck.AddInternal(card, silent: true);
                 }
 
@@ -67,6 +73,7 @@ public sealed class ExtractionModifier : ModifierModel
                     {
                         CardModel card = basic.ToMutable();
                         card.FloorAddedToDeck = 1;
+                        runState.AddCard(card, player);
                         player.Deck.AddInternal(card, silent: true);
                     }
                 }
