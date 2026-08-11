@@ -95,11 +95,11 @@ public static class ExtractionTheme
 
     // ----- Shared surfaces 共享表面样式 -----
 
-    /// <summary>Full-rect hub background, 80% opaque so the menu behind stays faintly visible. 大厅整屏背景（80% 不透明度）。</summary>
+    /// <summary>Full-rect hub background, 90% opaque so the menu behind stays faintly visible. 大厅整屏背景（90% 不透明度）。</summary>
     public static StyleBoxFlat BackgroundBox()
     {
         StyleBoxFlat sb = Box(Background);
-        sb.BgColor = new Color(Background.R, Background.G, Background.B, 0.8f);
+        sb.BgColor = new Color(Background.R, Background.G, Background.B, 0.9f);
         return sb;
     }
 
