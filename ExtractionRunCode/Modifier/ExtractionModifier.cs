@@ -1,3 +1,4 @@
+using MegaCrit.Sts2.Core.Entities.Ascension;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Players;
 using MegaCrit.Sts2.Core.Models;
@@ -117,22 +118,33 @@ public sealed class ExtractionModifier : ModifierModel
                 CarriedPickupQueue.MarkCarried(relic);
             }
 
+            // Ascension (TightBelt) shrinks potion slots AFTER AfterRunCreated runs; when every slot is filled the
+            // game's shrink writes to _potionSlots[IndexOf(null) == -1] → IndexOutOfRange, stalling run start. Inject
+            // only what the post-ascension slots hold, and remove the excess from the config so the local consume
+            // below leaves those copies in the warehouse (nothing injected, nothing consumed).
+            // 进阶 A4+（TightBelt）在 AfterRunCreated 之后缩减药水栏位，满栏时游戏收缩越界导致开局卡住。只注入缩减后的
+            // 栏位数，并把放不下/模型加载不到的副本从配置移除，本机消耗时多余副本留在仓库（未注入即不消耗）。
+            int maxPotions = player.MaxPotionCount - (runState.AscensionLevel >= (int)AscensionLevel.TightBelt ? 1 : 0);
             int addedPotions = 0;
-            foreach (SerializablePotion sp in config.Potions)
+            for (int i = 0; i < config.Potions.Count;)
             {
-                if (addedPotions >= player.MaxPotionCount)
+                if (addedPotions >= maxPotions)
                 {
-                    break;
+                    config.Potions.RemoveAt(i);
+                    continue;
                 }
 
+                SerializablePotion sp = config.Potions[i];
                 if (sp.Id == null || ModelDb.GetByIdOrNull<PotionModel>(sp.Id) == null)
                 {
+                    config.Potions.RemoveAt(i);
                     continue;
                 }
 
                 PotionModel potion = PotionModel.FromSerializable(sp);
                 player.AddPotionInternal(potion, silent: true);
                 addedPotions++;
+                i++;
             }
         }
 

@@ -196,6 +196,58 @@ public static class ExtractionLocalization
         ModSettingsText.LocString(SettingsTable, "extractionrun.settings.shop.sellRatio.description",
             "Ratio of the vanilla base price paid when selling (before the durability factor).");
 
+    public static ModSettingsText LootSectionTitleText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.section.loot.title", "Loot Animation");
+
+    public static ModSettingsText LootEnabledText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.loot.enabled", "Loot search animation");
+
+    public static ModSettingsText LootEnabledDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.loot.enabled.description",
+            "Before revealing rewards on card-choice, merchant and treasure-chest screens, play a magnifier search reveal. Extraction runs only.");
+
+    public static ModSettingsText LootBasicCommonText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.loot.basicCommon", "Starter/Common search time");
+
+    public static ModSettingsText LootBasicCommonDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.loot.basicCommon.description",
+            "Seconds spent searching a starter/common-rarity item (cards Basic+Common, relics Starter+Common, potions Common).");
+
+    public static ModSettingsText LootUncommonText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.loot.uncommon", "Uncommon search time");
+
+    public static ModSettingsText LootUncommonDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.loot.uncommon.description",
+            "Seconds spent searching an uncommon-rarity item.");
+
+    public static ModSettingsText LootRareText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.loot.rare", "Rare search time");
+
+    public static ModSettingsText LootRareDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.loot.rare.description",
+            "Seconds spent searching a rare-rarity item.");
+
+    public static ModSettingsText LootAncientText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.loot.ancient", "Ancient search time");
+
+    public static ModSettingsText LootAncientDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.loot.ancient.description",
+            "Seconds spent searching an ancient-rarity item.");
+
+    public static ModSettingsText LootOtherText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.loot.other", "Other search time");
+
+    public static ModSettingsText LootOtherDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.loot.other.description",
+            "Seconds spent searching any other rarity (event/token/status/curse/quest, shop relics, mod items).");
+
+    public static ModSettingsText LootSkipKeyText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.loot.skipKey", "Skip animation key");
+
+    public static ModSettingsText LootSkipKeyDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.loot.skipKey.description",
+            "Press this key to reveal every remaining item instantly. Clicking the item being searched reveals it and advances.");
+
     public static ModSettingsText ResetSectionTitleText() =>
         ModSettingsText.LocString(SettingsTable, "extractionrun.settings.section.reset.title", "Reset");
 

@@ -47,6 +47,10 @@ public static class ExtractionSettingsPage
     private const int MinWeightSlider = 1;
     private const int MaxWeightSlider = 20;
 
+    /// <summary>All loot-search durations share one slider range (min 1s). 各搜刮时长共用同一滑条范围（下限 1 秒）。</summary>
+    private const int MinLootSlider = 1;
+    private const int MaxLootSlider = 20;
+
     /// <summary>Guards the durability-toggle handler against re-entry (the revert write re-fires ValueWritten) and
     /// against the reset button flipping the toggle without a confirm dialog. 耐久切换处理器防重入（回退写会再次触发
     /// ValueWritten），也用于重置按钮直接翻转开关而不弹确认框。</summary>
@@ -170,6 +174,41 @@ public static class ExtractionSettingsPage
         static s => s.ShopSellRatio,
         static (s, v) => s.ShopSellRatio = v);
 
+    private static readonly ModSettingsValueBinding<ExtractionSettings, bool> LootEnabledBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.LootAnimationEnabled,
+        static (s, v) => s.LootAnimationEnabled = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, int> LootBasicCommonBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.LootAnimationBasicCommonDuration,
+        static (s, v) => s.LootAnimationBasicCommonDuration = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, int> LootUncommonBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.LootAnimationUncommonDuration,
+        static (s, v) => s.LootAnimationUncommonDuration = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, int> LootRareBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.LootAnimationRareDuration,
+        static (s, v) => s.LootAnimationRareDuration = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, int> LootAncientBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.LootAnimationAncientDuration,
+        static (s, v) => s.LootAnimationAncientDuration = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, int> LootOtherBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.LootAnimationOtherDuration,
+        static (s, v) => s.LootAnimationOtherDuration = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, string> LootSkipKeyBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.LootAnimationSkipKey,
+        static (s, v) => s.LootAnimationSkipKey = v);
+
     public static ExtractionSettings Current =>
         RitsuLibFramework.GetDataStore(Entry.ModId).Get<ExtractionSettings>(DataKey);
 
@@ -269,6 +308,37 @@ public static class ExtractionSettingsPage
                 .AddSlider("shop_sell_ratio", ExtractionLocalization.ShopSellRatioText(),
                     ShopSellRatioBinding, 0.1, 1.0, 0.05,
                     static d => $"{d:P0}", description: ExtractionLocalization.ShopSellRatioDescriptionText()))
+            .AddSection("loot", section => section
+                .WithTitle(ExtractionLocalization.LootSectionTitleText())
+                // Pure cosmetic — flipping the toggle needs no confirm and is safe mid-run (only affects the next screen
+                // opening). The durations + skip key hide until the toggle is on, like the capacity/durability swap.
+                // 纯视觉——切换无需确认、局内可改（只影响下次开屏）。时长与跳过键在开关开启前隐藏（同容量/耐久的互斥显示）。
+                .AddToggle("loot_enabled", ExtractionLocalization.LootEnabledText(),
+                    LootEnabledBinding, description: ExtractionLocalization.LootEnabledDescriptionText())
+                .AddIntSlider("loot_basic_common", ExtractionLocalization.LootBasicCommonText(),
+                    LootBasicCommonBinding, MinLootSlider, MaxLootSlider, 1,
+                    description: ExtractionLocalization.LootBasicCommonDescriptionText())
+                    .WithEntryVisibleWhen("loot_basic_common", () => Current.LootAnimationEnabled)
+                .AddIntSlider("loot_uncommon", ExtractionLocalization.LootUncommonText(),
+                    LootUncommonBinding, MinLootSlider, MaxLootSlider, 1,
+                    description: ExtractionLocalization.LootUncommonDescriptionText())
+                    .WithEntryVisibleWhen("loot_uncommon", () => Current.LootAnimationEnabled)
+                .AddIntSlider("loot_rare", ExtractionLocalization.LootRareText(),
+                    LootRareBinding, MinLootSlider, MaxLootSlider, 1,
+                    description: ExtractionLocalization.LootRareDescriptionText())
+                    .WithEntryVisibleWhen("loot_rare", () => Current.LootAnimationEnabled)
+                .AddIntSlider("loot_ancient", ExtractionLocalization.LootAncientText(),
+                    LootAncientBinding, MinLootSlider, MaxLootSlider, 1,
+                    description: ExtractionLocalization.LootAncientDescriptionText())
+                    .WithEntryVisibleWhen("loot_ancient", () => Current.LootAnimationEnabled)
+                .AddIntSlider("loot_other", ExtractionLocalization.LootOtherText(),
+                    LootOtherBinding, MinLootSlider, MaxLootSlider, 1,
+                    description: ExtractionLocalization.LootOtherDescriptionText())
+                    .WithEntryVisibleWhen("loot_other", () => Current.LootAnimationEnabled)
+                .AddKeyBinding("loot_skip_key", ExtractionLocalization.LootSkipKeyText(),
+                    LootSkipKeyBinding, allowModifierOnly: false,
+                    description: ExtractionLocalization.LootSkipKeyDescriptionText())
+                    .WithEntryVisibleWhen("loot_skip_key", () => Current.LootAnimationEnabled))
             .AddSection("reset", section => section
                 .WithTitle(ExtractionLocalization.ResetSectionTitleText())
                 .AddButton(
@@ -484,6 +554,20 @@ public static class ExtractionSettingsPage
             ShopPriceMultiplierBinding.Save();
             ShopSellRatioBinding.Write(Current.ShopSellRatio);
             ShopSellRatioBinding.Save();
+            LootEnabledBinding.Write(Current.LootAnimationEnabled);
+            LootEnabledBinding.Save();
+            LootBasicCommonBinding.Write(Current.LootAnimationBasicCommonDuration);
+            LootBasicCommonBinding.Save();
+            LootUncommonBinding.Write(Current.LootAnimationUncommonDuration);
+            LootUncommonBinding.Save();
+            LootRareBinding.Write(Current.LootAnimationRareDuration);
+            LootRareBinding.Save();
+            LootAncientBinding.Write(Current.LootAnimationAncientDuration);
+            LootAncientBinding.Save();
+            LootOtherBinding.Write(Current.LootAnimationOtherDuration);
+            LootOtherBinding.Save();
+            LootSkipKeyBinding.Write(Current.LootAnimationSkipKey);
+            LootSkipKeyBinding.Save();
         }
         finally
         {

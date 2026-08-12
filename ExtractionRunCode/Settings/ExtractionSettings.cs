@@ -91,6 +91,34 @@ public sealed class ExtractionSettings
     /// 商店卖出比例（确定性原版基准价 × 此值，再乘耐久系数）。</summary>
     public double ShopSellRatio { get; set; } = 0.5;
 
+    /// <summary>
+    /// Whether the 搜刮 loot-search reveal plays on reward screens (card rewards, treasure chest) in
+    /// extraction runs only. Pure cosmetic; default OFF.
+    /// 搜刮动画是否启用：仅搜打撤局内，在卡牌奖励 / 宝箱界面播放搜刮揭示动画。纯视觉，默认关闭。
+    /// </summary>
+    public bool LootAnimationEnabled { get; set; } = false;
+
+    /// <summary>Search duration (seconds) for Basic/Common-rarity items — card Basic+Common, relic Starter+Common,
+    /// potion Common. 基础/普通稀有度物品的搜刮时长（秒）——卡 Basic+Common、遗物 Starter+Common、药水 Common。</summary>
+    public int LootAnimationBasicCommonDuration { get; set; } = 1;
+
+    /// <summary>Search duration (seconds) for Uncommon-rarity items. 罕见稀有度物品的搜刮时长（秒）。</summary>
+    public int LootAnimationUncommonDuration { get; set; } = 2;
+
+    /// <summary>Search duration (seconds) for Rare-rarity items. 稀有稀有度物品的搜刮时长（秒）。</summary>
+    public int LootAnimationRareDuration { get; set; } = 4;
+
+    /// <summary>Search duration (seconds) for Ancient-rarity items. 先古稀有度物品的搜刮时长（秒）。</summary>
+    public int LootAnimationAncientDuration { get; set; } = 5;
+
+    /// <summary>Search duration (seconds) for any other rarity (event/token/status/curse/quest/shop, unresolvable ids).
+    /// 其他稀有度（事件/衍生/状态/诅咒/任务/商店、解析不到）物品的搜刮时长（秒）。</summary>
+    public int LootAnimationOtherDuration { get; set; } = 2;
+
+    /// <summary>Key that skips the whole remaining search sequence (RitsuLib hotkey binding string, e.g. "Space").
+    /// 跳过整段剩余搜刮序列的按键（RitsuLib 热键绑定串，如 "Space"）。</summary>
+    public string LootAnimationSkipKey { get; set; } = "Space";
+
     public void ResetToDefaults()
     {
         MaxCarryCards = 10;
@@ -116,5 +144,12 @@ public sealed class ExtractionSettings
         CapacityWeightRelic = 2;
         ShopPriceMultiplier = 2.0;
         ShopSellRatio = 0.5;
+        LootAnimationEnabled = false;
+        LootAnimationBasicCommonDuration = 1;
+        LootAnimationUncommonDuration = 2;
+        LootAnimationRareDuration = 4;
+        LootAnimationAncientDuration = 5;
+        LootAnimationOtherDuration = 2;
+        LootAnimationSkipKey = "Space";
     }
 }
