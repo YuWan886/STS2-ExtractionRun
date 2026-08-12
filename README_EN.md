@@ -12,7 +12,7 @@ A new game mode for *Slay the Spire 2* —  Search-Loot-Extract Mode. Built on t
 
 Every save slot has its own persistent **warehouse**. Before a run, open the Search-Loot-Extract entry on the main menu to reach the warehouse hub:
 
-1. Pick cards (≤ 10), relics (≤ 3), potions and gold from your warehouse to form a **carry loadout**.
+1. Pick cards, relics, potions and gold from your warehouse to form a **carry loadout** — cards and relics share a **backpack capacity** (default 15 slots, see "Backpack capacity" below).
 2. Start the run. The carried deck replaces the default starting deck, and the carried items are **consumed from the warehouse**.
 3. **Winning = successful extraction**: your final deck, relics, potions and gold are all deposited back into the warehouse.
 4. **Dying or abandoning = failed extraction**: the loadout you carried in is lost.
@@ -24,7 +24,8 @@ On first use, the warehouse is seeded with all Basic and Common cards, all Start
 ## Features
 
 - **Persistent warehouse**: independent per-save storage that accumulates loot across runs (gold capped at 9,999,999).
-- **Carry system**: freely assemble a loadout before each run; capacity is configurable (default 10 cards / 3 relics).
+- **Carry system**: freely assemble a loadout before each run; cards and relics share a **backpack capacity** (default 15 slots).
+- **Backpack capacity**: cards take slots by rarity (starter/common 1, uncommon 2, rare 3, ancient 4, other 2) and relics take 2, all sharing one backpack (default 15 slots). The carry panel shows a "Backpack X/15" bar at the top; once the pool is full, no more items can be added. An over-capacity carry is auto-trimmed (heaviest items dropped first) when the hub opens or the run starts, and gear-code imports are clamped to the remaining slots. Toggle and tune it in Settings.
 - **Search-Loot-Extract loop**: winner takes all, loser loses everything — death or abandon forfeits every carried item.
 - **Durability**: every card and relic copy carries durability. Each successful extraction decrements the carried-and-returned copies by 1; a copy reaching 0 breaks and is not deposited. Death or abandon loses the loadout outright (consumed at run start — durability never decrements on a loss). Tiles show the group's lowest remaining durability (amber "Durability n" badge); 0 shows a red "Broken" badge. Can be disabled entirely (see Settings).
 - **Clear reward**: every victory grants the character's full starting deck and starting relics, keeping your baseline kit renewable for future runs.
@@ -46,8 +47,11 @@ The shop and the hub are mutually exclusive: opening the shop hides the hub, clo
 
 ## Settings
 
-- **Max carried cards**: 0–20, default 10.
-- **Max carried relics**: 0–6, default 3.
+- **Backpack capacity**: master toggle, default on. When on, the carry is limited by a shared **backpack slot pool** instead of the max carried cards/relics below; when off, the per-kind count caps apply. Toggling needs a confirmation dialog and is blocked while a run or a character-select lobby is active (same as the durability toggle).
+- **Backpack slots**: total slots in the shared backpack, a 1–30 slider, default 15.
+- **Slot weights**: how many slots each card rarity and each relic takes (sliders, min 1) — starter/common 1, uncommon 2, rare 3, ancient 4, other 2 (event, token, status, curse, quest and mod cards), relic 2.
+- **Max carried cards**: 0–20, default 10 (the per-kind cap used when capacity is off).
+- **Max carried relics**: 0–6, default 3 (the per-kind cap used when capacity is off).
 - **Hover tooltips**: whether hovering card / relic / potion tiles shows the vanilla tooltip (default on).
 - **Durability**: master toggle, default on. Disabling switches the warehouse to a disposable no-durability copy (copies never decrement, nothing is shown); re-enabling returns to the previously frozen durability warehouse, discarding any no-durability progress.
 - **Durability caps**: the max durability granted to newly deposited items (new deposits only — existing copies are never retroactively changed), each a 1–20 slider — starter 5 / common 4 / uncommon 3 / rare 2 / ancient 1 / other 1 (event, token, status, curse, quest and mod cards) / relic 3.
