@@ -10,19 +10,20 @@ using MegaCrit.Sts2.Core.Saves.Runs;
 using STS2RitsuLib.Ui.Toast;
 using ExtractionRun.Data;
 using ExtractionRun.Lifecycle;
-using ExtractionRun.Settings;
 
 namespace ExtractionRun.UI;
 
 /// <summary>
 /// The 搜打撤 warehouse hub: a full-screen overlay opened from the main menu. Shows the persistent warehouse
-/// (cards / relics / potions / gold), lets the player pick a carry config (deck ≤ MaxCarryCards, relics ≤
-/// MaxCarryRelics, potions ≤ slots, gold), seeds + migrates the warehouse on first open, and launches the run.
+/// (cards / relics / potions / gold), lets the player pick a carry config (by default capacity-limited — cards cost by
+/// rarity, relics a flat amount, potions ≤ slots, gold; the OFF mode reverts to the MaxCarryCards/MaxCarryRelics count
+/// caps), seeds + migrates the warehouse on first open, and launches the run.
 /// The warehouse side is split into three tabs (cards / relics / potions) with per-tab search + multi-select filters
 /// (persisted in <see cref="WarehouseFilterState"/>), rendered by a pooled <see cref="VirtualizedItemGrid"/> with
 /// background art preload (<see cref="WarehouseCache"/>); the carry panel stays on the right and never tab-switches.
-/// 搜打撤仓库大厅：主菜单打开的全屏覆盖层。展示仓库、编辑携带配置、首次种子/迁移、发起跑局。仓库侧拆为卡牌/遗物/药水三个
-/// Tab，各自独立的搜索与多选过滤（持久化于 WarehouseFilterState），用池化虚拟网格 + 后台贴图预载渲染；携带面板常驻右侧。
+/// 搜打撤仓库大厅：主菜单打开的全屏覆盖层。展示仓库、编辑携带配置（默认按背包容量限制——卡牌按稀有度占格、遗物统一占格、
+/// 药水 ≤ 栏位、金币；OFF 模式回退到 MaxCarryCards/MaxCarryRelics 数量上限）、首次种子/迁移、发起跑局。仓库侧拆为卡牌/遗物/
+/// 药水三个 Tab，各自独立的搜索与多选过滤（持久化于 WarehouseFilterState），用池化虚拟网格 + 后台贴图预载渲染；携带面板常驻右侧。
 /// </summary>
 public sealed partial class WarehouseHubScreen : CanvasLayer
 {
@@ -108,6 +109,8 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     private HFlowContainer _carryRelicList = null!;
     private HFlowContainer _carryPotionList = null!;
     private Label _goldChipLabel = null!;
+    private PanelContainer _capacityChip = null!;
+    private Label _capacityChipLabel = null!;
     private Label _carryDeckLabel = null!;
     private Label _carryRelicsLabel = null!;
     private Label _carryPotionsLabel = null!;
@@ -165,6 +168,17 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         }
 
         WarehouseStore.BackfillCarryDurability(_carry);
+
+        // Natural-node clamp: a pending carry saved under an older (larger) limit — or re-sized after a settings change
+        // — is cut to the current budget on open, before anything renders. Heaviest-first (the carry clamp rule); the
+        // toast tells the player what was dropped. Settings edits never touch the draft; this open is the re-sync point.
+        // 自然节点钳制：旧版（更大）限制下保存的待发携带、或设置调整后超限的携带，打开时先按当前预算收敛再渲染（先丢最重）；
+        // 提示告知玩家被挤掉的数量。设置页改配置不碰草稿，本处打开即重同步点。
+        int dropped = CarryCapacity.ClampToBudget(_carry, CarryBudget.FromSettings());
+        if (dropped > 0)
+        {
+            RitsuToastService.ShowInfo(ExtractionLocalization.CapacityClampedText(dropped));
+        }
 
         // Defensive: a hand-edited/corrupt save could deserialize Filters as null.
         _warehouse.Filters ??= new WarehouseFilterState();
@@ -533,6 +547,22 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     private Control BuildCarryCard()
     {
         PanelContainer card = MakeCard(stretchRatio: 2f, out VBoxContainer body);
+
+        // Global capacity chip (ON mode): the shared card+relic budget, visible regardless of the active tab — the
+        // carry panel never tab-switches. Hidden in OFF mode, where the per-section count labels carry the limit.
+        // 全局容量胶囊（ON 模式）：卡牌+遗物共享预算，携带面板不随标签页切换，常驻显示。OFF 模式下隐藏（每节数量标签已带上限）。
+        var capacityChip = new PanelContainer();
+        capacityChip.AddThemeStyleboxOverride("panel", ExtractionTheme.ChipBox());
+        _capacityChipLabel = new Label
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        _capacityChipLabel.AddThemeColorOverride("font_color", ExtractionTheme.GoldChipText);
+        _capacityChipLabel.AddThemeFontSizeOverride("font_size", ExtractionTheme.FontSizeBody);
+        capacityChip.AddChild(_capacityChipLabel);
+        _capacityChip = capacityChip;
+        body.AddChild(capacityChip);
 
         // Gear-code row sits above the carried-deck section in every mode (singleplayer / host / client modal).
         // 战备码行放在携带牌组上方，所有模式（单机 / 主机 / 客机模态）都有。
@@ -911,15 +941,36 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
             _goldInput.Text = _carryGold.ToString();
         }
 
-        int maxCards = Math.Max(0, ExtractionSettingsPage.Current.MaxCarryCards);
-        int maxRelics = Math.Max(0, ExtractionSettingsPage.Current.MaxCarryRelics);
-        _carryDeckLabel.Text = ExtractionLocalization.LimitCardsText(_carry.Cards.Count, maxCards);
-        _carryRelicsLabel.Text = ExtractionLocalization.LimitRelicsText(_carry.Relics.Count, maxRelics);
+        CarryBudget budget = CarryBudget.FromSettings();
+        if (budget.UsesCapacity)
+        {
+            // Capacity mode: one shared budget, no per-kind cap — the section labels show counts + per-kind slot usage
+            // (which always sum to the chip's used count), the chip shows the pool. Sections never turn red; the
+            // pool-full red stays on the chip.
+            // 容量模式：一个共享预算、无每类上限——节标签显示数量 + 该节占格（两者之和恒等于胶囊占用），胶囊显池占用。
+            // 小节永不红，满池的红色只留在胶囊上。
+            int used = CarryCapacity.UsedCapacity(_carry);
+            _capacityChip.Visible = true;
+            _capacityChipLabel.Text = ExtractionLocalization.CapacityBarText(used, budget.Capacity);
+            _capacityChipLabel.AddThemeColorOverride("font_color",
+                used >= budget.Capacity ? ExtractionTheme.Danger : ExtractionTheme.GoldChipText);
+            _carryDeckLabel.Text = ExtractionLocalization.CarryDeckCountText(_carry.Cards.Count, CarryCapacity.CardCapacity(_carry));
+            _carryRelicsLabel.Text = ExtractionLocalization.CarryRelicsCountText(_carry.Relics.Count, CarryCapacity.RelicCapacity(_carry));
+        }
+        else
+        {
+            // OFF mode: the legacy per-kind count caps, shown per section.
+            _capacityChip.Visible = false;
+            _carryDeckLabel.Text = ExtractionLocalization.LimitCardsText(_carry.Cards.Count, budget.MaxCards);
+            _carryRelicsLabel.Text = ExtractionLocalization.LimitRelicsText(_carry.Relics.Count, budget.MaxRelics);
+        }
+
         _carryPotionsLabel.Text = ExtractionLocalization.LimitPotionsText(_carry.Potions.Count, 3);
 
         // Empty carry cannot start: ClearsPlayerDeck would give a dead 0-card deck — unless carrying any card is
-        // impossible (no cards to carry / MaxCarryCards ≤ 0), in which case the run's starter-deck fallback keeps it
-        // playable. 空携带不能开跑（ClearsPlayerDeck 会给一个 0 牌死局）——除非已不可能带任何卡，此时初始牌组兜底仍可玩。
+        // impossible (no cards to carry, count cap ≤ 0, or the capacity pool too small for the lightest card), in which
+        // case the run's starter-deck fallback keeps it playable. 空携带不能开跑（ClearsPlayerDeck 会给一个 0 牌死局）——除非
+        // 已不可能带任何卡（无卡可带、数量上限 ≤ 0、或容量池装不下最轻的卡），此时初始牌组兜底仍可玩。
         bool canStart = CanProceed();
         _startButton.Disabled = !canStart;
         _startHintLabel.Visible = !canStart;
@@ -1128,6 +1179,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         bool costOn = selCosts.Count > 0;
         bool sourceOn = selSources.Count > 0;
         string query = _query;
+        CarryBudget budget = CarryBudget.FromSettings();
 
         int filtered = 0;
         foreach (ExtractionItemTiles.CardGroup g in varieties)
@@ -1167,7 +1219,8 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
                         AddToCarryCards(id);
                     }
                 },
-                g.Rep.Id, _showDurability ? g.Durability : null));
+                g.Rep.Id, _showDurability ? g.Durability : null,
+                Disabled: g.Rep.Id is ModelId addId && budget.MoreAllowed(_carry, CarryCodec.ItemKind.Card, addId) <= 0));
         }
 
         UpdateLimitHint(Tab.Cards, filtered, rows.Count);
@@ -1185,6 +1238,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         bool rarityOn = selRarities.Count > 0;
         bool sourceOn = selSources.Count > 0;
         string query = _query;
+        CarryBudget budget = CarryBudget.FromSettings();
 
         int filtered = 0;
         foreach (ExtractionItemTiles.RelicGroup g in varieties)
@@ -1222,7 +1276,8 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
                         AddToCarryRelics(id);
                     }
                 },
-                g.Rep.Id, _showDurability ? g.Durability : null));
+                g.Rep.Id, _showDurability ? g.Durability : null,
+                Disabled: g.Rep.Id is ModelId addId && budget.MoreAllowed(_carry, CarryCodec.ItemKind.Relic, addId) <= 0));
         }
 
         UpdateLimitHint(Tab.Relics, filtered, rows.Count);
@@ -1372,7 +1427,10 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     /// </summary>
     private void AddToCarryCards(ModelId id)
     {
-        if (_carry.Cards.Count >= Math.Max(0, ExtractionSettingsPage.Current.MaxCarryCards))
+        // Belt-and-suspenders over the tile's Disabled state: the budget guard (OFF count cap / ON capacity) is the
+        // single source of truth, so an enabled tile can never overdraw the shared pool.
+        CarryBudget budget = CarryBudget.FromSettings();
+        if (budget.MoreAllowed(_carry, CarryCodec.ItemKind.Card, id) <= 0)
         {
             return;
         }
@@ -1394,7 +1452,8 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
 
     private void AddToCarryRelics(ModelId id)
     {
-        if (_carry.Relics.Count >= Math.Max(0, ExtractionSettingsPage.Current.MaxCarryRelics))
+        CarryBudget budget = CarryBudget.FromSettings();
+        if (budget.MoreAllowed(_carry, CarryCodec.ItemKind.Relic, id) <= 0)
         {
             return;
         }
@@ -1506,7 +1565,14 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
 
     private void StartRun()
     {
-        // Defense-in-depth: the button is disabled when CanProceed is false, but never launch a 0-card run.
+        // Defense-in-depth: a stale draft is re-clamped to the current budget first (should be a no-op — the open-time
+        // clamp + the guarded adds already kept it in bounds), then never launch a 0-card run.
+        int dropped = CarryCapacity.ClampToBudget(_carry, CarryBudget.FromSettings());
+        if (dropped > 0)
+        {
+            RitsuToastService.ShowInfo(ExtractionLocalization.CapacityClampedText(dropped));
+        }
+
         if (!CanProceed())
         {
             Entry.Logger.Info("WarehouseHub: blocked empty-carry start (carry at least one card).");
@@ -1549,6 +1615,12 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     /// 重暂存进大厅（init postfix 已暂存旧值，此处覆盖并同步），然后露出大厅。不设 IsExtractionLaunch（修正项由主机转发）。</summary>
     private void ConfirmCarryForClient()
     {
+        int dropped = CarryCapacity.ClampToBudget(_carry, CarryBudget.FromSettings());
+        if (dropped > 0)
+        {
+            RitsuToastService.ShowInfo(ExtractionLocalization.CapacityClampedText(dropped));
+        }
+
         if (!CanProceed())
         {
             Entry.Logger.Info("WarehouseHub: blocked empty client carry (carry at least one card).");
@@ -1600,7 +1672,31 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     /// (the run's starter-deck fallback keeps it playable). 是否可继续：携带非空；或携带为空但已不可能带任何卡（初始牌组兜底可玩）。</summary>
     private bool CanProceed() => _carry.Cards.Count > 0 || !CanCarryAnyCards;
 
-    private bool CanCarryAnyCards => ExtractionSettingsPage.Current.MaxCarryCards > 0 && _warehouse.Cards.Count > 0;
+    private bool CanCarryAnyCards
+    {
+        get
+        {
+            CarryBudget budget = CarryBudget.FromSettings();
+            if (budget.UsesCapacity)
+            {
+                // Possible iff some carryable card's weight fits the whole pool (weights ≥ 1, so capacity ≥ 1 usually
+                // qualifies; a tiny capacity with only heavyweight stock makes carrying impossible → starter fallback).
+                if (budget.Capacity <= 0 || _warehouse.Cards.Count == 0)
+                {
+                    return false;
+                }
+
+                int cheapest = _warehouse.Cards
+                    .Select(c => CarryCapacity.WeightForCard(c.Card.Id))
+                    .Where(w => w > 0)
+                    .DefaultIfEmpty(int.MaxValue)
+                    .Min();
+                return cheapest <= budget.Capacity;
+            }
+
+            return budget.MaxCards > 0 && _warehouse.Cards.Count > 0;
+        }
+    }
 
     private void CloseHub()
     {

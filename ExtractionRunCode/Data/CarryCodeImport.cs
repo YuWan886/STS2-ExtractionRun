@@ -43,22 +43,30 @@ public static class CarryCodeImport
         /// and insufficient stock combined). 未能进入 Applied 的物品总数（缺 mod + 无法识别 + 库存不足）。</summary>
         public int MissingCount { get; set; }
 
+        /// <summary>Items dropped because the backpack capacity pool ran out (ON mode; 0 when OFF). 因容量池不足被舍弃
+        /// 的物品数（ON 模式；OFF 时为 0）。</summary>
+        public int CapacityShortfall { get; set; }
+
         /// <summary>True when the requested gold exceeded the warehouse balance and was clamped. 请求金币超出仓库余额并被收敛。</summary>
         public bool GoldClamped { get; set; }
     }
 
-    public static Result Apply(CarryCodec.DecodedCarry code, WarehouseData warehouse, int maxCards, int maxRelics)
+    public static Result Apply(CarryCodec.DecodedCarry code, WarehouseData warehouse, CarryBudget budget)
     {
         var result = new Result();
-        int cardsLeft = Math.Max(0, maxCards);
-        int relicsLeft = Math.Max(0, maxRelics);
+        // OFF keeps per-kind count budgets; ON draws cards + relics from one shared capacity pool.
+        int cardsLeft = budget.MaxCards;
+        int relicsLeft = budget.MaxRelics;
+        int capacityLeft = budget.Capacity;
+        bool capacityMode = budget.UsesCapacity;
         int potionsLeft = MaxPotions;
 
         var importedById = new Dictionary<ModelId, int>();
 
         foreach (CarryCodec.CodeItem item in code.Items)
         {
-            ImportItem(result, item, warehouse, importedById, ref cardsLeft, ref relicsLeft, ref potionsLeft);
+            ImportItem(result, item, warehouse, importedById, capacityMode, ref cardsLeft, ref relicsLeft,
+                ref potionsLeft, ref capacityLeft);
         }
 
         int desiredGold = Math.Max(0, code.Gold);
@@ -76,8 +84,13 @@ public static class CarryCodeImport
         _ => PotionCategory,
     };
 
+    /// <summary>How many copies of a weight-<paramref name="weight"/> item fit in <paramref name="remainingCapacity"/>
+    /// (a partial slot can't be filled). 剩余容量还能装下几件权重为 weight 的物品（不满一格放不下）。</summary>
+    private static int CapacityBudget(int remainingCapacity, int weight) => weight <= 0 ? 0 : remainingCapacity / weight;
+
     private static void ImportItem(Result result, CarryCodec.CodeItem item, WarehouseData warehouse,
-        Dictionary<ModelId, int> importedById, ref int cardsLeft, ref int relicsLeft, ref int potionsLeft)
+        Dictionary<ModelId, int> importedById, bool capacityMode, ref int cardsLeft, ref int relicsLeft,
+        ref int potionsLeft, ref int capacityLeft)
     {
         if (item.OwnerStem != null && !CarryCodeOwner.IsModLoaded(item.OwnerStem))
         {
@@ -104,10 +117,16 @@ public static class CarryCodeImport
             return;
         }
 
+        // OFF: per-kind count budget. ON: how many copies of this item fit in the remaining capacity pool — a partial
+        // slot can't be filled, so it's floor(remaining ÷ weight).
         int budget = kind switch
         {
-            CarryCodec.ItemKind.Card => cardsLeft,
-            CarryCodec.ItemKind.Relic => relicsLeft,
+            CarryCodec.ItemKind.Card => capacityMode
+                ? CapacityBudget(capacityLeft, CarryCapacity.WeightForCard(id))
+                : cardsLeft,
+            CarryCodec.ItemKind.Relic => capacityMode
+                ? CapacityBudget(capacityLeft, CarryCapacity.WeightForRelic())
+                : relicsLeft,
             _ => potionsLeft,
         };
         int alreadyImported = importedById.GetValueOrDefault(id);
@@ -115,13 +134,40 @@ public static class CarryCodeImport
         int importable = Math.Min(item.Count, Math.Min(remainingStock, budget));
         result.MissingCount += item.Count - importable;
 
+        // Capacity shortfall: when the capacity pool (not stock) was the binding constraint, report it for the dialog's
+        // dedicated capacity line. 容量缺口：当容量池（而非库存）成为瓶颈时，计入供弹窗的专属容量行。
+        if (capacityMode)
+        {
+            int stockAllowed = Math.Min(item.Count, remainingStock);
+            if (importable < stockAllowed)
+            {
+                result.CapacityShortfall += stockAllowed - importable;
+            }
+        }
+
         switch (kind)
         {
             case CarryCodec.ItemKind.Card:
-                cardsLeft -= importable;
+                if (capacityMode)
+                {
+                    capacityLeft -= CarryCapacity.WeightForCard(id) * importable;
+                }
+                else
+                {
+                    cardsLeft -= importable;
+                }
+
                 break;
             case CarryCodec.ItemKind.Relic:
-                relicsLeft -= importable;
+                if (capacityMode)
+                {
+                    capacityLeft -= CarryCapacity.WeightForRelic() * importable;
+                }
+                else
+                {
+                    relicsLeft -= importable;
+                }
+
                 break;
             default:
                 potionsLeft -= importable;

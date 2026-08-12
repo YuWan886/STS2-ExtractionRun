@@ -53,6 +53,37 @@ public sealed class ExtractionSettings
     /// <summary>Max durability granted to a new relic (all relics share one value). 新入遗物的耐久上限（遗物统一）。</summary>
     public int RelicDurability { get; set; } = 3;
 
+    /// <summary>
+    /// Whether the backpack capacity system is active. ON: carry is limited by a unified capacity pool — cards cost by
+    /// rarity, relics a flat amount, cards + relics share the same pool (potions/gold free). OFF: the legacy
+    /// <see cref="MaxCarryCards"/>/<see cref="MaxCarryRelics"/> per-kind count caps apply.
+    /// 背包容量系统是否启用。ON：携带受统一容量池限制——卡牌按稀有度占格、遗物统一占格，卡牌与遗物共享同一池（药水/金币不计）；
+    /// OFF：回退到旧的 MaxCarryCards / MaxCarryRelics 每类数量上限。
+    /// </summary>
+    public bool CarryCapacityEnabled { get; set; } = true;
+
+    /// <summary>Total backpack capacity in ON mode (cards + relics share the pool). 背包总容量（ON 模式下卡牌与遗物共享）。</summary>
+    public int CarryCapacity { get; set; } = 15;
+
+    /// <summary>Capacity cost of one Basic or Common card. 一张基础/普通卡牌占用的容量。</summary>
+    public int CapacityWeightBasicCommon { get; set; } = 1;
+
+    /// <summary>Capacity cost of one Uncommon card. 一张罕见卡牌占用的容量。</summary>
+    public int CapacityWeightUncommon { get; set; } = 2;
+
+    /// <summary>Capacity cost of one Rare card. 一张稀有卡牌占用的容量。</summary>
+    public int CapacityWeightRare { get; set; } = 3;
+
+    /// <summary>Capacity cost of one Ancient card. 一张先古卡牌占用的容量。</summary>
+    public int CapacityWeightAncient { get; set; } = 4;
+
+    /// <summary>Capacity cost of a card in any other rarity (None/Event/Token/Status/Curse/Quest, mod cards,
+    /// unresolvable ids). 其他稀有度（None/Event/Token/Status/Curse/Quest、mod 卡、解析不到）卡牌占用的容量。</summary>
+    public int CapacityWeightOther { get; set; } = 2;
+
+    /// <summary>Capacity cost of one relic (all relics share one value). 一件遗物占用的容量（遗物统一）。</summary>
+    public int CapacityWeightRelic { get; set; } = 2;
+
     /// <summary>Buy-price multiplier for the hub shop (rolled vanilla price × this). 商店买入价倍率（roll 价 × 此值）。</summary>
     public double ShopPriceMultiplier { get; set; } = 2.0;
 
@@ -75,6 +106,14 @@ public sealed class ExtractionSettings
         CardDurabilityAncient = 1;
         CardDurabilityOther = 1;
         RelicDurability = 3;
+        CarryCapacityEnabled = true;
+        CarryCapacity = 15;
+        CapacityWeightBasicCommon = 1;
+        CapacityWeightUncommon = 2;
+        CapacityWeightRare = 3;
+        CapacityWeightAncient = 4;
+        CapacityWeightOther = 2;
+        CapacityWeightRelic = 2;
         ShopPriceMultiplier = 2.0;
         ShopSellRatio = 0.5;
     }

@@ -14,17 +14,18 @@ using ExtractionRun.UI;
 namespace ExtractionRun.Settings;
 
 /// <summary>
-/// Registers the 搜打撤 settings page: max carried cards / relics sliders, per-kind hover-tooltip toggles, the
-/// durability section (on/off toggle + per-rarity durability caps), and a reset button. Values are bound to the
+/// Registers the 搜打撤 settings page: per-kind hover-tooltip toggles, the capacity section (backpack-capacity toggle +
+/// rarity weights / legacy count caps, swapped by the toggle), the durability section (on/off toggle + per-rarity
+/// durability caps), and a reset button. Values are bound to the
 /// <see cref="ExtractionSettings"/> POCO via <see cref="ModSettingsValueBinding{TData,TValue}"/> at SaveScope.Global.
 /// The durability toggle is confirm-gated: flipping it opens an <see cref="ExtractionConfirmDialog"/> (确定/取消) and is
 /// blocked while a run or character-select lobby is active — a lobby has already staged the pending carry, which a mode
 /// switch can't retract. Confirming calls <see cref="WarehouseStore.SwitchDurabilityMode"/>, which freezes/restores the
 /// durability warehouse file and re-syncs the pending carry; cancelling writes the old value back.
-/// 搜打撤设置页：最大携带牌数/遗物数滑条、卡牌/遗物/药水各自的悬停提示开关、耐久区（开关 + 各稀有度耐久上限）、重置按钮，
-/// 通过 ModSettingsValueBinding 绑定到 ExtractionSettings。耐久开关需确认弹窗：翻转时弹 ExtractionConfirmDialog（确定/取消），
+/// 搜打撤设置页：悬停提示开关、背包容量区（容量开关 + 稀有度权重 / 旧数量上限，按开关互斥显示）、耐久区（开关 + 各稀有度耐久上限）、
+/// 重置按钮，通过 ModSettingsValueBinding 绑定到 ExtractionSettings。耐久开关需确认弹窗：翻转时弹 ExtractionConfirmDialog（确定/取消），
 /// 局内或角色选择大厅中禁止切换（大厅已暂存携带，切换无法收回）。确定时调用 SwitchDurabilityMode（冻结/还原耐久文件并重同步
-/// 携带），取消时写回旧值。
+/// 携带），取消时写回旧值。容量开关同样确认门控 + 局中阻断，但切换不动仓库文件（仅改携带限制，自然节点钳制重新应用）。
 /// </summary>
 public static class ExtractionSettingsPage
 {
@@ -37,10 +38,22 @@ public static class ExtractionSettingsPage
     private const int MaxDurabilitySlider = 20;
     private const int MinDurabilitySlider = 1;
 
+    /// <summary>Backpack capacity slider range (default 15). 背包容量滑条范围（默认 15）。</summary>
+    private const int MinCapacitySlider = 1;
+    private const int MaxCapacitySlider = 30;
+
+    /// <summary>All capacity weights share one slider range (min 1 — a free card would open a no-cost slot). 各容量权重共用
+    /// 同一滑条范围（下限 1——0 权重等于白嫖一格）。</summary>
+    private const int MinWeightSlider = 1;
+    private const int MaxWeightSlider = 20;
+
     /// <summary>Guards the durability-toggle handler against re-entry (the revert write re-fires ValueWritten) and
     /// against the reset button flipping the toggle without a confirm dialog. 耐久切换处理器防重入（回退写会再次触发
     /// ValueWritten），也用于重置按钮直接翻转开关而不弹确认框。</summary>
     private static bool _suppressDurabilityToggle;
+
+    /// <summary>Same re-entry + reset guard for the capacity toggle. 容量开关的同类防重入/重置守卫。</summary>
+    private static bool _suppressCapacityToggle;
 
     private static readonly ModSettingsValueBinding<ExtractionSettings, int> MaxCardsBinding = new(
         Entry.ModId, DataKey, SaveScope.Global,
@@ -107,6 +120,46 @@ public static class ExtractionSettingsPage
         static s => s.RelicDurability,
         static (s, v) => s.RelicDurability = v);
 
+    private static readonly ModSettingsValueBinding<ExtractionSettings, bool> CapacityEnabledBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.CarryCapacityEnabled,
+        static (s, v) => s.CarryCapacityEnabled = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, int> CapacityTotalBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.CarryCapacity,
+        static (s, v) => s.CarryCapacity = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, int> CapacityBasicCommonBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.CapacityWeightBasicCommon,
+        static (s, v) => s.CapacityWeightBasicCommon = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, int> CapacityUncommonBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.CapacityWeightUncommon,
+        static (s, v) => s.CapacityWeightUncommon = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, int> CapacityRareBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.CapacityWeightRare,
+        static (s, v) => s.CapacityWeightRare = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, int> CapacityAncientBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.CapacityWeightAncient,
+        static (s, v) => s.CapacityWeightAncient = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, int> CapacityOtherBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.CapacityWeightOther,
+        static (s, v) => s.CapacityWeightOther = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, int> CapacityRelicBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.CapacityWeightRelic,
+        static (s, v) => s.CapacityWeightRelic = v);
+
     private static readonly ModSettingsValueBinding<ExtractionSettings, double> ShopPriceMultiplierBinding = new(
         Entry.ModId, DataKey, SaveScope.Global,
         static s => s.ShopPriceMultiplier,
@@ -135,16 +188,54 @@ public static class ExtractionSettingsPage
             .WithVisibleOnHostSurfaces(ModSettingsHostSurface.All)
             .AddSection("general", section => section
                 .WithTitle(ExtractionLocalization.GeneralSectionTitleText())
-                .AddIntSlider("max_cards", ExtractionLocalization.MaxCardsText(), MaxCardsBinding,
-                    0, MaxCardsSlider, 1, description: ExtractionLocalization.MaxCardsDescriptionText())
-                .AddIntSlider("max_relics", ExtractionLocalization.MaxRelicsText(), MaxRelicsBinding,
-                    0, MaxRelicsSlider, 1, description: ExtractionLocalization.MaxRelicsDescriptionText())
                 .AddToggle("show_card_hover_tips", ExtractionLocalization.ShowCardHoverTipsText(),
                     ShowCardHoverTipsBinding, description: ExtractionLocalization.ShowCardHoverTipsDescriptionText())
                 .AddToggle("show_relic_hover_tips", ExtractionLocalization.ShowRelicHoverTipsText(),
                     ShowRelicHoverTipsBinding, description: ExtractionLocalization.ShowRelicHoverTipsDescriptionText())
                 .AddToggle("show_potion_hover_tips", ExtractionLocalization.ShowPotionHoverTipsText(),
                     ShowPotionHoverTipsBinding, description: ExtractionLocalization.ShowPotionHoverTipsDescriptionText()))
+            .AddSection("capacity", section => section
+                .WithTitle(ExtractionLocalization.CapacitySectionTitleText())
+                .AddToggle("capacity_enabled", ExtractionLocalization.CapacityEnabledText(),
+                    CapacityEnabledBinding, description: ExtractionLocalization.CapacityEnabledDescriptionText())
+                // The two limit systems share one section and swap by the toggle: ON shows the capacity pool + rarity
+                // weights, OFF shows the legacy per-kind count caps. RitsuLib re-evaluates WithEntryVisibleWhen on every
+                // settings-screen refresh, so a flip swaps the visible set immediately.
+                // 两套限制系统共用一个 section，按开关互斥显示：ON 显示容量池 + 稀有度权重，OFF 显示旧的每类数量上限。
+                .AddIntSlider("capacity_total", ExtractionLocalization.CapacityTotalText(),
+                    CapacityTotalBinding, MinCapacitySlider, MaxCapacitySlider, 1,
+                    description: ExtractionLocalization.CapacityTotalDescriptionText())
+                    .WithEntryVisibleWhen("capacity_total", () => Current.CarryCapacityEnabled)
+                .AddIntSlider("capacity_weight_basic_common", ExtractionLocalization.CapacityBasicCommonText(),
+                    CapacityBasicCommonBinding, MinWeightSlider, MaxWeightSlider, 1,
+                    description: ExtractionLocalization.CapacityBasicCommonDescriptionText())
+                    .WithEntryVisibleWhen("capacity_weight_basic_common", () => Current.CarryCapacityEnabled)
+                .AddIntSlider("capacity_weight_uncommon", ExtractionLocalization.CapacityUncommonText(),
+                    CapacityUncommonBinding, MinWeightSlider, MaxWeightSlider, 1,
+                    description: ExtractionLocalization.CapacityUncommonDescriptionText())
+                    .WithEntryVisibleWhen("capacity_weight_uncommon", () => Current.CarryCapacityEnabled)
+                .AddIntSlider("capacity_weight_rare", ExtractionLocalization.CapacityRareText(),
+                    CapacityRareBinding, MinWeightSlider, MaxWeightSlider, 1,
+                    description: ExtractionLocalization.CapacityRareDescriptionText())
+                    .WithEntryVisibleWhen("capacity_weight_rare", () => Current.CarryCapacityEnabled)
+                .AddIntSlider("capacity_weight_ancient", ExtractionLocalization.CapacityAncientText(),
+                    CapacityAncientBinding, MinWeightSlider, MaxWeightSlider, 1,
+                    description: ExtractionLocalization.CapacityAncientDescriptionText())
+                    .WithEntryVisibleWhen("capacity_weight_ancient", () => Current.CarryCapacityEnabled)
+                .AddIntSlider("capacity_weight_other", ExtractionLocalization.CapacityOtherText(),
+                    CapacityOtherBinding, MinWeightSlider, MaxWeightSlider, 1,
+                    description: ExtractionLocalization.CapacityOtherDescriptionText())
+                    .WithEntryVisibleWhen("capacity_weight_other", () => Current.CarryCapacityEnabled)
+                .AddIntSlider("capacity_weight_relic", ExtractionLocalization.CapacityRelicText(),
+                    CapacityRelicBinding, MinWeightSlider, MaxWeightSlider, 1,
+                    description: ExtractionLocalization.CapacityRelicDescriptionText())
+                    .WithEntryVisibleWhen("capacity_weight_relic", () => Current.CarryCapacityEnabled)
+                .AddIntSlider("max_cards", ExtractionLocalization.MaxCardsText(), MaxCardsBinding,
+                    0, MaxCardsSlider, 1, description: ExtractionLocalization.MaxCardsDescriptionText())
+                    .WithEntryVisibleWhen("max_cards", () => !Current.CarryCapacityEnabled)
+                .AddIntSlider("max_relics", ExtractionLocalization.MaxRelicsText(), MaxRelicsBinding,
+                    0, MaxRelicsSlider, 1, description: ExtractionLocalization.MaxRelicsDescriptionText())
+                    .WithEntryVisibleWhen("max_relics", () => !Current.CarryCapacityEnabled))
             .AddSection("durability", section => section
                 .WithTitle(ExtractionLocalization.DurabilitySectionTitleText())
                 .AddToggle("durability_enabled", ExtractionLocalization.DurabilityEnabledText(),
@@ -192,6 +283,26 @@ public static class ExtractionSettingsPage
     }
 
     /// <summary>
+    /// Routes binding writes to the confirm-gated toggle handlers (durability / capacity). Both are gated on their
+    /// suppress flag so the confirm-dialog revert and the reset button never re-enter the handler they are reverting.
+    /// 把绑定写入路由到带确认门控的开关处理器（耐久 / 容量）。两者都以其 suppress 标志门控，保证确认框回退与重置按钮写回时
+    /// 不会再次进入正在回退的那个处理器。
+    /// </summary>
+    private static void OnBindingValueWritten(IModSettingsBinding binding)
+    {
+        if (!_suppressDurabilityToggle && binding == DurabilityEnabledBinding)
+        {
+            HandleDurabilityToggle();
+            return;
+        }
+
+        if (!_suppressCapacityToggle && binding == CapacityEnabledBinding)
+        {
+            HandleCapacityToggle();
+        }
+    }
+
+    /// <summary>
     /// Confirm-gates the durability toggle. Runs synchronously after the binding flips <c>DurabilityEnabled</c>, so the
     /// old value is its inverse. While a run/lobby is active (the pending carry was already staged) the flip is reverted
     /// immediately; otherwise an <see cref="ExtractionConfirmDialog"/> asks 确定/取消 — confirm calls the warehouse mode
@@ -199,13 +310,8 @@ public static class ExtractionSettingsPage
     /// 对耐久开关做确认门控。在绑定翻转 DurabilityEnabled 后同步触发，旧值即其反相。局内/大厅（携带已暂存）时立即回退；
     /// 否则弹确认框——确定时调用仓库模式切换，取消时写回旧值（以防重入守卫，回退写不会再次进入本处理器）。
     /// </summary>
-    private static void OnBindingValueWritten(IModSettingsBinding binding)
+    private static void HandleDurabilityToggle()
     {
-        if (_suppressDurabilityToggle || binding != DurabilityEnabledBinding)
-        {
-            return;
-        }
-
         bool newValue = DurabilityEnabledBinding.Read();
         bool oldValue = !newValue;
 
@@ -251,6 +357,55 @@ public static class ExtractionSettingsPage
         AddOverlay(dialog);
     }
 
+    /// <summary>
+    /// Confirm-gates the capacity toggle. A capacity switch never moves warehouse files (unlike durability) — it only
+    /// changes the carry limit, which the natural-node clamp re-applies on the next hub open / confirm. While a run/lobby
+    /// is active (the pending carry was already staged at the old limit) the flip is reverted immediately; otherwise an
+    /// <see cref="ExtractionConfirmDialog"/> asks 确定/取消 — cancel writes the old value back, confirm just clears the
+    /// guard (the pending carry is re-clamped from the new limit on next use).
+    /// 对容量开关做确认门控。容量切换不动仓库文件（不同于耐久）——只改携带限制，由自然节点钳制在下次打开仓库/确认时重新应用。
+    /// 局内/大厅（携带已按旧限制暂存）时立即回退；否则弹确认框——取消写回旧值，确定仅清守卫（待发携带下次使用时按新限制重钳）。
+    /// </summary>
+    private static void HandleCapacityToggle()
+    {
+        bool newValue = CapacityEnabledBinding.Read();
+        bool oldValue = !newValue;
+
+        if (IsRunOrLobbyActive() || WarehouseHubScreen.Current != null)
+        {
+            _suppressCapacityToggle = true;
+            try
+            {
+                CapacityEnabledBinding.Write(oldValue);
+                CapacityEnabledBinding.Save();
+            }
+            finally
+            {
+                _suppressCapacityToggle = false;
+            }
+
+            RitsuToastService.ShowInfo(ExtractionLocalization.CapacityBlockedText());
+            return;
+        }
+
+        _suppressCapacityToggle = true;
+        var dialog = new ExtractionConfirmDialog(
+            newValue
+                ? ExtractionLocalization.CapacityEnableHeaderText()
+                : ExtractionLocalization.CapacityDisableHeaderText(),
+            newValue
+                ? ExtractionLocalization.CapacityEnableBodyText()
+                : ExtractionLocalization.CapacityDisableBodyText(),
+            () => _suppressCapacityToggle = false,
+            () =>
+            {
+                CapacityEnabledBinding.Write(oldValue);
+                CapacityEnabledBinding.Save();
+                _suppressCapacityToggle = false;
+            });
+        AddOverlay(dialog);
+    }
+
     /// <summary>Adds a high-layer overlay dialog to the scene root (the settings screen may be open without NGame).
     /// 把高层覆盖弹窗加到场景根（设置页可能在无 NGame 的主菜单打开）。</summary>
     private static void AddOverlay(Node overlay)
@@ -280,6 +435,7 @@ public static class ExtractionSettingsPage
         Current.ResetToDefaults();
 
         _suppressDurabilityToggle = true;
+        _suppressCapacityToggle = true;
         try
         {
             DurabilityEnabledBinding.Write(Current.DurabilityEnabled);
@@ -288,6 +444,22 @@ public static class ExtractionSettingsPage
             MaxCardsBinding.Save();
             MaxRelicsBinding.Write(Current.MaxCarryRelics);
             MaxRelicsBinding.Save();
+            CapacityEnabledBinding.Write(Current.CarryCapacityEnabled);
+            CapacityEnabledBinding.Save();
+            CapacityTotalBinding.Write(Current.CarryCapacity);
+            CapacityTotalBinding.Save();
+            CapacityBasicCommonBinding.Write(Current.CapacityWeightBasicCommon);
+            CapacityBasicCommonBinding.Save();
+            CapacityUncommonBinding.Write(Current.CapacityWeightUncommon);
+            CapacityUncommonBinding.Save();
+            CapacityRareBinding.Write(Current.CapacityWeightRare);
+            CapacityRareBinding.Save();
+            CapacityAncientBinding.Write(Current.CapacityWeightAncient);
+            CapacityAncientBinding.Save();
+            CapacityOtherBinding.Write(Current.CapacityWeightOther);
+            CapacityOtherBinding.Save();
+            CapacityRelicBinding.Write(Current.CapacityWeightRelic);
+            CapacityRelicBinding.Save();
             ShowCardHoverTipsBinding.Write(Current.ShowCardHoverTips);
             ShowCardHoverTipsBinding.Save();
             ShowRelicHoverTipsBinding.Write(Current.ShowRelicHoverTips);
@@ -316,6 +488,7 @@ public static class ExtractionSettingsPage
         finally
         {
             _suppressDurabilityToggle = false;
+            _suppressCapacityToggle = false;
         }
 
         // Reset flips durability back to ON without a confirm dialog — apply the mode switch directly if it changed.

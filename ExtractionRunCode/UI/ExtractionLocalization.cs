@@ -120,6 +120,65 @@ public static class ExtractionLocalization
         ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.relic.description",
             "Max durability granted to a new relic (all relics share one value).");
 
+    public static ModSettingsText CapacitySectionTitleText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.section.capacity.title", "Backpack Capacity");
+
+    public static ModSettingsText CapacityEnabledText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.capacity.enabled", "Backpack capacity system");
+
+    public static ModSettingsText CapacityEnabledDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.capacity.enabled.description",
+            "Limit carried cards and relics by a shared backpack capacity (cards cost by rarity, relics a flat amount). Disabling reverts to the max card / relic count caps.");
+
+    public static ModSettingsText CapacityTotalText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.capacity.total", "Backpack slots");
+
+    public static ModSettingsText CapacityTotalDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.capacity.total.description",
+            "Total capacity shared by carried cards and relics.");
+
+    public static ModSettingsText CapacityBasicCommonText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.capacity.basicCommon", "Starter/Common card weight");
+
+    public static ModSettingsText CapacityBasicCommonDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.capacity.basicCommon.description",
+            "Backpack slots one starter- or common-rarity card occupies.");
+
+    public static ModSettingsText CapacityUncommonText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.capacity.uncommon", "Uncommon card weight");
+
+    public static ModSettingsText CapacityUncommonDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.capacity.uncommon.description",
+            "Backpack slots one uncommon-rarity card occupies.");
+
+    public static ModSettingsText CapacityRareText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.capacity.rare", "Rare card weight");
+
+    public static ModSettingsText CapacityRareDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.capacity.rare.description",
+            "Backpack slots one rare-rarity card occupies.");
+
+    public static ModSettingsText CapacityAncientText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.capacity.ancient", "Ancient card weight");
+
+    public static ModSettingsText CapacityAncientDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.capacity.ancient.description",
+            "Backpack slots one ancient-rarity card occupies.");
+
+    public static ModSettingsText CapacityOtherText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.capacity.other", "Other card weight");
+
+    public static ModSettingsText CapacityOtherDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.capacity.other.description",
+            "Backpack slots a card of any other rarity occupies (event/token/status/curse/quest, mod cards).");
+
+    public static ModSettingsText CapacityRelicText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.capacity.relic", "Relic weight");
+
+    public static ModSettingsText CapacityRelicDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.capacity.relic.description",
+            "Backpack slots one relic occupies (all relics share one value).");
+
     public static ModSettingsText ShopSectionTitleText() =>
         ModSettingsText.LocString(SettingsTable, "extractionrun.settings.section.shop.title", "Shop");
 
@@ -217,6 +276,21 @@ public static class ExtractionLocalization
     public static string GoldWarehouseText(int gold) => Formatted("EXTRACTION_RUN.gold.warehouse", gold);
     public static string GoldCarryText(int gold) => Formatted("EXTRACTION_RUN.gold.carry", gold);
 
+    // ----- Backpack capacity 背包容量 -----
+
+    /// <summary>Global capacity bar text. 全局容量条文本。</summary>
+    public static string CapacityBarText(int used, int total) => Formatted("EXTRACTION_RUN.capacity.bar", used, total);
+
+    /// <summary>Per-section carry count + capacity used in capacity mode (no per-kind cap to show). The two numbers stay
+    /// on one line so the count reads first and the slot usage second. 容量模式下每节显示数量 + 该节占用的容量（无每类上限）。
+    /// 两个数字同一行，数量在前、占格在后。</summary>
+    public static string CarryDeckCountText(int count, int capacity) => Formatted("EXTRACTION_RUN.carry.count.deck", count, capacity);
+
+    public static string CarryRelicsCountText(int count, int capacity) => Formatted("EXTRACTION_RUN.carry.count.relics", count, capacity);
+
+    /// <summary>Toast after the natural-node clamp dropped over-capacity copies. 自然节点钳制挤掉超容副本后的提示。</summary>
+    public static string CapacityClampedText(int count) => Formatted("EXTRACTION_RUN.capacity.clamped", count);
+
     // ----- Run seed 种子 -----
 
     public static string SeedLabelText() => Text("EXTRACTION_RUN.seed.label");
@@ -271,6 +345,9 @@ public static class ExtractionLocalization
     public static string CodeUnrecognizedText() => Text("EXTRACTION_RUN.code.unrecognized");
     public static string CodeUnrecognizedListText(string entries) => Formatted("EXTRACTION_RUN.code.unrecognizedList", entries);
     public static string CodeGoldClampedText(int gold, int balance) => Formatted("EXTRACTION_RUN.code.goldClamped", gold, balance);
+
+    /// <summary>Import summary line when the backpack capacity dropped some items. 导入摘要：容量不足导致部分物品未导入。</summary>
+    public static string CodeCapacityClampedText(int missing) => Formatted("EXTRACTION_RUN.code.capacityClamped", missing);
     public static string CodeNoneImportableText() => Text("EXTRACTION_RUN.code.noneImportable");
     public static string CodeErrorText(CarryCodec.DecodeError error) => error switch
     {
@@ -300,6 +377,17 @@ public static class ExtractionLocalization
 
     /// <summary>Toast shown when the durability toggle was blocked (run/lobby active). 局内/大厅中切换被拒的提示。</summary>
     public static string DurabilityBlockedText() => Text("EXTRACTION_RUN.durability.blocked");
+
+    /// <summary>Capacity-toggle confirm dialog: enabling. 开启容量的确认弹窗标题/正文。</summary>
+    public static string CapacityEnableHeaderText() => Text("EXTRACTION_RUN.capacity.enable.header");
+    public static string CapacityEnableBodyText() => Text("EXTRACTION_RUN.capacity.enable.body");
+
+    /// <summary>Capacity-toggle confirm dialog: disabling. 关闭容量的确认弹窗标题/正文。</summary>
+    public static string CapacityDisableHeaderText() => Text("EXTRACTION_RUN.capacity.disable.header");
+    public static string CapacityDisableBodyText() => Text("EXTRACTION_RUN.capacity.disable.body");
+
+    /// <summary>Toast shown when the capacity toggle was blocked (run/lobby active). 局内/大厅中切换被拒的提示。</summary>
+    public static string CapacityBlockedText() => Text("EXTRACTION_RUN.capacity.blocked");
 
     // ----- Settlement screen 结算界面 -----
 

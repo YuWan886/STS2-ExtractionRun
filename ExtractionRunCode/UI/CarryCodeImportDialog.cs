@@ -4,7 +4,6 @@ using MegaCrit.Sts2.Core.Entities.Potions;
 using MegaCrit.Sts2.Core.Entities.Relics;
 using MegaCrit.Sts2.Core.Models;
 using ExtractionRun.Data;
-using ExtractionRun.Settings;
 
 namespace ExtractionRun.UI;
 
@@ -33,6 +32,7 @@ public sealed partial class CarryCodeImportDialog : CanvasLayer
     private Label _importableLabel = null!;
     private Label _missingLabel = null!;
     private Label _goldClampedLabel = null!;
+    private Label _capacityClampedLabel = null!;
     private Label _previewEmptyLabel = null!;
     private HFlowContainer _preview = null!;
     private Button _applyButton = null!;
@@ -150,6 +150,7 @@ public sealed partial class CarryCodeImportDialog : CanvasLayer
         _importableLabel = MakeStatusLabel(ExtractionTheme.TextSecondary);
         _missingLabel = MakeStatusLabel(ExtractionTheme.Danger);
         _goldClampedLabel = MakeStatusLabel(ExtractionTheme.GoldChipText);
+        _capacityClampedLabel = MakeStatusLabel(ExtractionTheme.GoldChipText);
 
         box.AddChild(_errorLabel);
         box.AddChild(_missingModsLabel);
@@ -157,6 +158,7 @@ public sealed partial class CarryCodeImportDialog : CanvasLayer
         box.AddChild(_importableLabel);
         box.AddChild(_missingLabel);
         box.AddChild(_goldClampedLabel);
+        box.AddChild(_capacityClampedLabel);
         return box;
     }
 
@@ -268,15 +270,14 @@ public sealed partial class CarryCodeImportDialog : CanvasLayer
             return;
         }
 
-        int maxCards = Math.Max(0, ExtractionSettingsPage.Current.MaxCarryCards);
-        int maxRelics = Math.Max(0, ExtractionSettingsPage.Current.MaxCarryRelics);
-        CarryCodeImport.Result result = CarryCodeImport.Apply(decoded, _warehouse, maxCards, maxRelics);
+        CarryBudget budget = CarryBudget.FromSettings();
+        CarryCodeImport.Result result = CarryCodeImport.Apply(decoded, _warehouse, budget);
         _result = result;
 
         RenderPreview(decoded);
         UpdateStatus(result);
 
-        bool canProceed = result.Applied.Cards.Count > 0 || !CanCarryAnyCards(maxCards);
+        bool canProceed = result.Applied.Cards.Count > 0 || !CanCarryAnyCards(budget);
         bool applyable = !result.Applied.IsEmpty && canProceed;
         _applyButton.Disabled = !applyable;
         if (!applyable)
@@ -288,7 +289,30 @@ public sealed partial class CarryCodeImportDialog : CanvasLayer
         }
     }
 
-    private bool CanCarryAnyCards(int maxCards) => maxCards > 0 && _warehouse.Cards.Count > 0;
+    private bool CanCarryAnyCards(CarryBudget budget)
+    {
+        if (_warehouse.Cards.Count == 0)
+        {
+            return false;
+        }
+
+        if (budget.UsesCapacity)
+        {
+            if (budget.Capacity <= 0)
+            {
+                return false;
+            }
+
+            int cheapest = _warehouse.Cards
+                .Select(c => CarryCapacity.WeightForCard(c.Card.Id))
+                .Where(w => w > 0)
+                .DefaultIfEmpty(int.MaxValue)
+                .Min();
+            return cheapest <= budget.Capacity;
+        }
+
+        return budget.MaxCards > 0;
+    }
 
     private void RenderPreview(CarryCodec.DecodedCarry decoded)
     {
@@ -395,6 +419,12 @@ public sealed partial class CarryCodeImportDialog : CanvasLayer
             _goldClampedLabel.Text = ExtractionLocalization.CodeGoldClampedText(result.Applied.Gold, _warehouse.Gold);
             _goldClampedLabel.Visible = true;
         }
+
+        if (result.CapacityShortfall > 0)
+        {
+            _capacityClampedLabel.Text = ExtractionLocalization.CodeCapacityClampedText(result.CapacityShortfall);
+            _capacityClampedLabel.Visible = true;
+        }
     }
 
     private void ShowError(CarryCodec.DecodeError error)
@@ -411,6 +441,7 @@ public sealed partial class CarryCodeImportDialog : CanvasLayer
         _importableLabel.Visible = false;
         _missingLabel.Visible = false;
         _goldClampedLabel.Visible = false;
+        _capacityClampedLabel.Visible = false;
     }
 
     // ----- Apply 应用 -----

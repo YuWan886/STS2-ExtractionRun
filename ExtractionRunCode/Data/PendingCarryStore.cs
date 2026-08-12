@@ -98,6 +98,13 @@ public static class PendingCarryStore
             data.Relics = ClampCarry(data.Relics, r => r.Relic.Id, CountsBy(warehouse.Relics, r => r.Relic.Id));
             data.Potions = ClampCarry(data.Potions, p => p.Id, CountsBy(warehouse.Potions, p => p.Id));
             data.Gold = Math.Min(Math.Max(0, data.Gold), Math.Max(0, warehouse.Gold));
+
+            // Budget clamp (single path): ON → capacity pool, OFF → per-kind count caps. Trims a carry saved under a
+            // larger limit so it's never re-injected over the current one (the shrink/durability-switch path). The
+            // carry clamp rule applies (heaviest-first in ON); the persisted store is trimmed silently — the next hub
+            // open shows the result. 预算钳制（单一路径）：ON 按容量池、OFF 按每类数量上限。把更大限制下保存的携带收敛到当前
+            // 限制，防止超限重新注入（删仓/耐久切换路径）。丢弃顺序同携带钳制（ON 先丢最重）；持久化静默收敛，下次打开仓库即见结果。
+            CarryCapacity.ClampToBudget(data, CarryBudget.FromSettings());
         });
         store.Save(DataKey);
     }

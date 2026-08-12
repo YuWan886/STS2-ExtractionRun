@@ -27,7 +27,8 @@ public sealed partial class VirtualizedItemGrid : Control
     /// （商店出售瓦片用它来减少选中数）。</summary>
     public sealed record RenderData(string Name, string Pool, int Count, Func<Texture2D?> Texture,
         ExtractionItemTiles.ItemTileAction Action, Action? OnClick, ModelId? Id, int? Durability = null,
-        int? Price = null, int SelectedCount = 0, Action<Button>? OnTileClick = null, Action? OnRightClick = null);
+        int? Price = null, int SelectedCount = 0, Action<Button>? OnTileClick = null, Action? OnRightClick = null,
+        bool Disabled = false);
 
     private readonly List<Button> _pool = new();
     private readonly Dictionary<Button, Action?> _callbacks = new();
@@ -174,6 +175,7 @@ public sealed partial class VirtualizedItemGrid : Control
         tile.Position = new Vector2(col * (ExtractionItemTiles.TileWidth + Gap), row * stride);
         ExtractionItemTiles.PopulateItemTile(tile, data.Name, data.Pool, data.Count, data.Texture(), data.Action,
             data.Id, data.Durability, data.Price, data.SelectedCount);
+        tile.Disabled = data.Disabled;
         _tileCallbacks[tile] = data.OnTileClick;
         _callbacks[tile] = data.OnClick;
         _rightCallbacks[tile] = data.OnRightClick;
@@ -223,6 +225,7 @@ public sealed partial class VirtualizedItemGrid : Control
     {
         ExtractionItemTooltip.Hide(tile);
         tile.Visible = false;
+        tile.Disabled = false;
         _tileCallbacks[tile] = null;
         _callbacks[tile] = null;
         _rightCallbacks[tile] = null;
