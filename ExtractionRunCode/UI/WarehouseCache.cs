@@ -5,18 +5,20 @@ namespace ExtractionRun.UI;
 
 /// <summary>
 /// Module-level display cache for the warehouse hub. Groups every variety (base-card / relic / potion) once per
-/// (warehouse instance reference, version) and preloads all item art in the background via
+/// (warehouse instance reference, version, durability-split flag) and preloads all item art in the background via
 /// <see cref="ResourceLoader.LoadThreadedRequest"/>. Survives hub close/reopen within a session, so the second open
 /// costs nothing; invalidates automatically when <see cref="WarehouseStore"/> bumps <see cref="WarehouseData.Version"/>
-/// (deposit / consume / seed / migration) or when the save slot changes (RitsuLib swaps the root instance, breaking
-/// reference equality — see ModDataStore.Get docs).
-/// 仓库大厅的模块级展示缓存：按（仓库实例引用, 版本号）一次性分组全部牌种（基础卡/遗物/药水），并用 LoadThreadedRequest 后台预载全部贴图。
-/// 缓存跨大厅开合存活（同会话第二次打开零成本）；Deposit/ConsumeCarried/种子/迁移会自增 Version，或切换存档位导致实例被替换，都会自动失效重建。
+/// (deposit / consume / seed / migration), the split flag flips, or when the save slot changes (RitsuLib swaps the
+/// root instance, breaking reference equality — see ModDataStore.Get docs).
+/// 仓库大厅的模块级展示缓存：按（仓库实例引用, 版本号, 耐久拆分标志）一次性分组全部牌种（基础卡/遗物/药水），并用
+/// LoadThreadedRequest 后台预载全部贴图。缓存跨大厅开合存活（同会话第二次打开零成本）；Deposit/ConsumeCarried/种子/迁移
+/// 会自增 Version、拆分标志翻转、或切换存档位导致实例被替换，都会自动失效重建。
 /// </summary>
 public static class WarehouseCache
 {
     private static WarehouseData? _key;
     private static int _version = -1;
+    private static bool _split;
 
     private static List<ExtractionItemTiles.CardGroup> _cards = new();
     private static List<ExtractionItemTiles.RelicGroup> _relics = new();
@@ -38,22 +40,24 @@ public static class WarehouseCache
     public static IReadOnlyList<ExtractionItemTiles.PotionGroup> Potions => _potions;
 
     /// <summary>
-    /// Rebuilds the grouped metadata when the warehouse instance or its version changed; otherwise a no-op. Art is
+    /// Rebuilds the grouped metadata when the warehouse instance, its version, or the durability-split flag changed;
+    /// otherwise a no-op (the split flag is part of the key so flipping the setting rebuilds the display). Art is
     /// grouped with <c>loadArt: false</c> so the hub never synchronously decodes a portrait — every texture comes
-    /// through <see cref="Resolve"/> once the background preload finished. 版本/实例变化时重建分组元数据，否则空操作。
-    /// 分组时不解析贴图（loadArt:false），所有贴图经 Resolve 在后台预载完成后按需提供。
+    /// through <see cref="Resolve"/> once the background preload finished. 版本/实例/拆分标志变化时重建分组元数据，否则空操作
+    /// （拆分标志并入缓存键，切设置即重建显示）。分组时不解析贴图（loadArt:false），所有贴图经 Resolve 在后台预载完成后按需提供。
     /// </summary>
-    public static void Ensure(WarehouseData warehouse)
+    public static void Ensure(WarehouseData warehouse, bool splitByDurability)
     {
-        if (_key == warehouse && _version == warehouse.Version)
+        if (_key == warehouse && _version == warehouse.Version && _split == splitByDurability)
         {
             return;
         }
 
         _key = warehouse;
         _version = warehouse.Version;
-        _cards = ExtractionItemTiles.GroupCards(warehouse.Cards, loadArt: false);
-        _relics = ExtractionItemTiles.GroupRelics(warehouse.Relics, loadArt: false);
+        _split = splitByDurability;
+        _cards = ExtractionItemTiles.GroupCards(warehouse.Cards, loadArt: false, splitByDurability);
+        _relics = ExtractionItemTiles.GroupRelics(warehouse.Relics, loadArt: false, splitByDurability);
         _potions = ExtractionItemTiles.GroupPotions(warehouse.Potions, loadArt: false);
         ResetPrewarm();
     }

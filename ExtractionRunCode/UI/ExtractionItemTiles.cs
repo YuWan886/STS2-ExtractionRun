@@ -9,13 +9,14 @@ using MegaCrit.Sts2.Core.Saves.Runs;
 namespace ExtractionRun.UI;
 
 /// <summary>
-/// Shared card-form item tile rendering + grouping for the 搜打撤 UI (warehouse hub and extraction settlement).
-/// Groups duplicate serializable items by id (cards merge across upgrade levels — the warehouse is base-only),
-/// resolves name / source pool / art / filter metadata (rarity, type, cost), and builds a clickable tile button
-/// showing art, name, source pool, quantity and an add/remove affordance.
-/// 搜打撤界面共用的物品卡片渲染与分组：按 id 合并重复项（卡牌跨升级合并——仓库只存基础态），解析名称/来源池/贴图/过滤元数据
-/// （稀有度/类型/费用），构建带增删角标的卡片按钮。瓦片拆成 CreateItemTile（建骨架）+ PopulateItemTile（填数据），
-/// 供虚拟网格复用，避免滚动时重建节点。
+/// Shared card-form item tile rendering + grouping for the 搜打撤 UI (warehouse hub, shop and extraction settlement).
+/// Groups duplicate serializable items by id — and, when split by durability is on, additionally by durability so
+/// copies at different durability render as separate tiles (cards merge across upgrade levels — the warehouse is
+/// base-only) — resolves name / source pool / art / filter metadata (rarity, type, cost), and builds a clickable tile
+/// button showing art, name, source pool, quantity and an add/remove affordance.
+/// 搜打撤界面共用的物品卡片渲染与分组：按 id 合并重复项，开启拆分时再按耐久分组（不同耐久的副本独立成块；卡牌跨升级合并——
+/// 仓库只存基础态），解析名称/来源池/贴图/过滤元数据（稀有度/类型/费用），构建带增删角标的卡片按钮。瓦片拆成
+/// CreateItemTile（建骨架）+ PopulateItemTile（填数据），供虚拟网格复用，避免滚动时重建节点。
 /// </summary>
 public static class ExtractionItemTiles
 {
@@ -91,17 +92,20 @@ public static class ExtractionItemTiles
     // ----- Grouping 分组 -----
 
     /// <summary>
-    /// Groups cards by base id (upgrade levels merged — the warehouse stores base state only). Sorted by source pool
-    /// (canonical order) then rarity then id. <c>Durability</c> on the group is the LOWEST remaining durability among
-    /// its copies (the hub/settlement tile badge shows the worst copy). When <paramref name="loadArt"/> is false (hub),
-    /// textures are NOT touched so the async-preload path can resolve them lazily instead of synchronously loading
-    /// every portrait.
-    /// 按基础 id 分组（升级合并——仓库只存基础态），按来源池（规范序）→稀有度→id 排序。分组的 Durability 为该组副本的最低剩余
-    /// 耐久（大厅/结算瓦片角标显示最破的一份）。loadArt=false（大厅）时不触碰贴图，交由异步预加载路径延迟解析。
+    /// Groups cards by base id — and, when <paramref name="splitByDurability"/> is on, additionally by durability, so
+    /// copies at different durability show as separate tiles (each with its own badge) instead of one tile labeled with
+    /// the worst copy. The key is (id, durability) with a -1 sentinel for the merged key; copies sharing the key merge
+    /// into one group's <c>Count</c>. In merged mode the group's <c>Durability</c> is the LOWEST remaining durability;
+    /// in split mode it is the stack's exact value. Sorted by source pool (canonical order) then rarity then id, then
+    /// durability (best-first) when split. When <paramref name="loadArt"/> is false (hub), textures are NOT touched so
+    /// the async-preload path can resolve them lazily instead of synchronously loading every portrait.
+    /// 按基础 id 分组——开启拆分时再按耐久分组：不同耐久的副本各占一块瓦片（各显其角标），不再合并为一块只显最破。键为
+    /// (id, 耐久)，合并模式用 -1 哨兵；同键副本合并为一组的 Count。合并模式分组 Durability 为组内最低；拆分模式为该堆精确值。
+    /// 按来源池（规范序）→稀有度→id 排序，拆分时再按耐久降序（满耐久在前）。loadArt=false（大厅）时不触碰贴图。
     /// </summary>
-    public static List<CardGroup> GroupCards(IReadOnlyList<WarehouseCard> cards, bool loadArt = true)
+    public static List<CardGroup> GroupCards(IReadOnlyList<WarehouseCard> cards, bool loadArt = true, bool splitByDurability = true)
     {
-        var map = new Dictionary<ModelId, (SerializableCard Rep, int Count, int MinDur)>();
+        var map = new Dictionary<(ModelId, int), (SerializableCard Rep, int Count, int MinDur)>();
         foreach (WarehouseCard wc in cards)
         {
             SerializableCard sc = wc.Card;
@@ -110,29 +114,31 @@ public static class ExtractionItemTiles
                 continue;
             }
 
-            if (map.TryGetValue(id, out (SerializableCard Rep, int Count, int MinDur) entry))
+            var key = (id, splitByDurability ? wc.Durability : -1);
+            if (map.TryGetValue(key, out (SerializableCard Rep, int Count, int MinDur) entry))
             {
-                map[id] = (entry.Rep, entry.Count + 1, Math.Min(entry.MinDur, wc.Durability));
+                map[key] = (entry.Rep, entry.Count + 1, Math.Min(entry.MinDur, wc.Durability));
             }
             else
             {
-                map[id] = (sc, 1, wc.Durability);
+                map[key] = (sc, 1, wc.Durability);
             }
         }
 
         var groups = new List<CardGroup>(map.Count);
-        foreach ((SerializableCard rep, int count, int minDur) in map.Values)
+        foreach (KeyValuePair<(ModelId, int), (SerializableCard Rep, int Count, int MinDur)> kv in map)
         {
-            groups.Add(BuildCardGroup(rep, count, minDur, loadArt));
+            int durability = splitByDurability ? kv.Key.Item2 : kv.Value.MinDur;
+            groups.Add(BuildCardGroup(kv.Value.Rep, kv.Value.Count, durability, loadArt));
         }
 
         groups.Sort(CompareCardGroups);
         return groups;
     }
 
-    public static List<RelicGroup> GroupRelics(IReadOnlyList<WarehouseRelic> relics, bool loadArt = true)
+    public static List<RelicGroup> GroupRelics(IReadOnlyList<WarehouseRelic> relics, bool loadArt = true, bool splitByDurability = true)
     {
-        var map = new Dictionary<ModelId, (SerializableRelic Rep, int Count, int MinDur)>();
+        var map = new Dictionary<(ModelId, int), (SerializableRelic Rep, int Count, int MinDur)>();
         foreach (WarehouseRelic wr in relics)
         {
             SerializableRelic sr = wr.Relic;
@@ -141,20 +147,22 @@ public static class ExtractionItemTiles
                 continue;
             }
 
-            if (map.TryGetValue(id, out (SerializableRelic Rep, int Count, int MinDur) entry))
+            var key = (id, splitByDurability ? wr.Durability : -1);
+            if (map.TryGetValue(key, out (SerializableRelic Rep, int Count, int MinDur) entry))
             {
-                map[id] = (entry.Rep, entry.Count + 1, Math.Min(entry.MinDur, wr.Durability));
+                map[key] = (entry.Rep, entry.Count + 1, Math.Min(entry.MinDur, wr.Durability));
             }
             else
             {
-                map[id] = (sr, 1, wr.Durability);
+                map[key] = (sr, 1, wr.Durability);
             }
         }
 
         var groups = new List<RelicGroup>(map.Count);
-        foreach ((SerializableRelic rep, int count, int minDur) in map.Values)
+        foreach (KeyValuePair<(ModelId, int), (SerializableRelic Rep, int Count, int MinDur)> kv in map)
         {
-            groups.Add(BuildRelicGroup(rep, count, minDur, loadArt));
+            int durability = splitByDurability ? kv.Key.Item2 : kv.Value.MinDur;
+            groups.Add(BuildRelicGroup(kv.Value.Rep, kv.Value.Count, durability, loadArt));
         }
 
         groups.Sort(CompareRelicGroups);
@@ -327,11 +335,22 @@ public static class ExtractionItemTiles
     /// </summary>
     public static string Key(ModelId? id) => id?.ToString() ?? "<null>";
 
-    public static string CardKey(CardGroup g) => Key(g.Rep.Id);
+    /// <summary>
+    /// Preview/sell-selection key for a card group: id-only when merged, <c>id@durability</c> when split — both sides of
+    /// the warehouse-vs-carried preview must pass the same flag or the counts won't line up. 卡片预览/出售选中键：合并模式仅 id，
+    /// 拆分模式 id@耐久——预览两侧必须传同一标志，否则数量对不上。
+    /// </summary>
+    public static string CardKey(CardGroup g, bool splitByDurability) =>
+        splitByDurability ? DurabilityKey(g.Rep.Id, g.Durability) : Key(g.Rep.Id);
 
-    public static string RelicKey(RelicGroup g) => Key(g.Rep.Id);
+    public static string RelicKey(RelicGroup g, bool splitByDurability) =>
+        splitByDurability ? DurabilityKey(g.Rep.Id, g.Durability) : Key(g.Rep.Id);
 
     public static string PotionKey(PotionGroup g) => Key(g.Rep.Id);
+
+    /// <summary>Key of one exact-durability copy stack (<c>id@durability</c>); ids never contain <c>@</c>, so it can't
+    /// collide with an id-only key. 单份耐久堆的键（id@耐久）；id 不含 @，不会与纯 id 键冲突。</summary>
+    public static string DurabilityKey(ModelId? id, int durability) => Key(id) + "@" + durability;
 
     // ----- Tile rendering 卡片渲染 -----
 
@@ -782,7 +801,14 @@ public static class ExtractionItemTiles
             return byRarity;
         }
 
-        return string.CompareOrdinal(a.Rep.Id?.ToString(), b.Rep.Id?.ToString());
+        int byId = string.CompareOrdinal(a.Rep.Id?.ToString(), b.Rep.Id?.ToString());
+        if (byId != 0)
+        {
+            return byId;
+        }
+
+        // Split stacks of one id sort best-first (full durability leads). 同一 id 的拆分堆满耐久在前。
+        return b.Durability.CompareTo(a.Durability);
     }
 
     private static int CompareRelicGroups(RelicGroup a, RelicGroup b)
@@ -799,7 +825,13 @@ public static class ExtractionItemTiles
             return byRarity;
         }
 
-        return string.CompareOrdinal(a.Rep.Id?.ToString(), b.Rep.Id?.ToString());
+        int byId = string.CompareOrdinal(a.Rep.Id?.ToString(), b.Rep.Id?.ToString());
+        if (byId != 0)
+        {
+            return byId;
+        }
+
+        return b.Durability.CompareTo(a.Durability);
     }
 
     private static int ComparePotionGroups(PotionGroup a, PotionGroup b)

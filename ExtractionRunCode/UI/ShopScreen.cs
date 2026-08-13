@@ -3,6 +3,7 @@ using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Saves.Runs;
 using STS2RitsuLib.Ui.Toast;
 using ExtractionRun.Data;
+using ExtractionRun.Settings;
 
 namespace ExtractionRun.UI;
 
@@ -57,6 +58,11 @@ public sealed partial class ShopScreen : CanvasLayer
     private readonly ShopData _shop;
     private readonly bool _showDurability;
 
+    /// <summary>Whether copies of one card/relic at different durability render as separate sell rows (durability ON +
+    /// the SplitDurabilityGroups setting). Makes sell value and the durability filter exact per stack. 同种牌/遗物是否按耐久
+    /// 独立显示出售行（耐久开启且设置开启）：卖价与耐久筛选按堆精确。</summary>
+    private readonly bool _splitByDurability;
+
     /// <summary>The shop currently open in the scene tree (null when closed). 当前打开中的商店（关闭时为 null）。</summary>
     public static ShopScreen? Current { get; private set; }
 
@@ -105,6 +111,7 @@ public sealed partial class ShopScreen : CanvasLayer
         ShopStore.EnsureStocked();
         _shop = ShopStore.Current;
         _showDurability = WarehouseStore.IsDurabilityEnabled;
+        _splitByDurability = _showDurability && ExtractionSettingsPage.Current.SplitDurabilityGroups;
 
         // Defensive: a hand-edited/corrupt save could deserialize Filters as null.
         _warehouse.Filters ??= new WarehouseFilterState();
@@ -704,8 +711,8 @@ public sealed partial class ShopScreen : CanvasLayer
 
     private void UpdateSellCards(List<WarehouseCard> available)
     {
-        List<ExtractionItemTiles.CardGroup> groups = ExtractionItemTiles.GroupCards(available, loadArt: false);
-        Dictionary<string, int> valueByKey = SellValueByKey(ShopStore.KindCard, available, c => c.Card.Id, c => c.Durability);
+        List<ExtractionItemTiles.CardGroup> groups = ExtractionItemTiles.GroupCards(available, loadArt: false, _splitByDurability);
+        Dictionary<string, int> valueByKey = SellValueByKey(ShopStore.KindCard, available, c => c.Card.Id, c => c.Durability, _splitByDurability);
 
         SetSellFilterOptions(_sellFilters[FilterKind.CardPools],
             groups.Select(g => g.PoolSlug).Where(s => s.Length > 0).Distinct().ToList(),
@@ -744,7 +751,7 @@ public sealed partial class ShopScreen : CanvasLayer
                 continue;
             }
 
-            string key = ExtractionItemTiles.CardKey(g);
+            string key = ExtractionItemTiles.CardKey(g, _splitByDurability);
             rows.Add(new VirtualizedItemGrid.RenderData(g.Name, g.Pool, g.Count,
                 () => WarehouseCache.Resolve(g.PortraitPath), ExtractionItemTiles.ItemTileAction.Display,
                 () => ChangeSellSelection(SellTab.Cards, key, step: +1, max: Input.IsKeyPressed(Key.Shift), available: g.Count),
@@ -765,8 +772,8 @@ public sealed partial class ShopScreen : CanvasLayer
 
     private void UpdateSellRelics(List<WarehouseRelic> available)
     {
-        List<ExtractionItemTiles.RelicGroup> groups = ExtractionItemTiles.GroupRelics(available, loadArt: false);
-        Dictionary<string, int> valueByKey = SellValueByKey(ShopStore.KindRelic, available, r => r.Relic.Id, r => r.Durability);
+        List<ExtractionItemTiles.RelicGroup> groups = ExtractionItemTiles.GroupRelics(available, loadArt: false, _splitByDurability);
+        Dictionary<string, int> valueByKey = SellValueByKey(ShopStore.KindRelic, available, r => r.Relic.Id, r => r.Durability, _splitByDurability);
 
         SetSellFilterOptions(_sellFilters[FilterKind.RelicPools],
             groups.Select(g => g.PoolSlug).Where(s => s.Length > 0).Distinct().ToList(),
@@ -799,7 +806,7 @@ public sealed partial class ShopScreen : CanvasLayer
                 continue;
             }
 
-            string key = ExtractionItemTiles.RelicKey(g);
+            string key = ExtractionItemTiles.RelicKey(g, _splitByDurability);
             rows.Add(new VirtualizedItemGrid.RenderData(g.Name, g.Pool, g.Count,
                 () => WarehouseCache.Resolve(g.IconPath), ExtractionItemTiles.ItemTileAction.Display,
                 () => ChangeSellSelection(SellTab.Relics, key, step: +1, max: Input.IsKeyPressed(Key.Shift), available: g.Count),
@@ -820,7 +827,7 @@ public sealed partial class ShopScreen : CanvasLayer
     private void UpdateSellPotions(List<SerializablePotion> available)
     {
         List<ExtractionItemTiles.PotionGroup> groups = ExtractionItemTiles.GroupPotions(available, loadArt: false);
-        Dictionary<string, int> valueByKey = SellValueByKey(ShopStore.KindPotion, available, p => p.Id, _ => 0);
+        Dictionary<string, int> valueByKey = SellValueByKey(ShopStore.KindPotion, available, p => p.Id, _ => 0, split: false);
 
         SetSellFilterOptions(_sellFilters[FilterKind.PotionPools],
             groups.Select(g => g.PoolSlug).Where(s => s.Length > 0).Distinct().ToList(),
@@ -863,16 +870,17 @@ public sealed partial class ShopScreen : CanvasLayer
             || AnySellFilterActive(FilterKind.PotionRarities) || AnySellFilterActive(FilterKind.PotionSources));
     }
 
-    /// <summary>Per-group total sell value keyed by id string (sum of each available copy's sell value).
-    /// 每分组的可售总价（按 id 字符串，各可售副本卖价之和）。</summary>
-    private Dictionary<string, int> SellValueByKey<T>(string kind, List<T> copies, Func<T, ModelId?> idOf, Func<T, int> durabilityOf)
+    /// <summary>Per-stack total sell value: keyed by id (merged) or id@durability (split, so each exact-durability stack
+    /// shows its own value instead of a durability-blended sum). 每堆的可售总价：合并按 id、拆分按 id@耐久（每堆显示自己的
+    /// 真实卖价，不再把不同耐久的卖价揉在一起）。</summary>
+    private Dictionary<string, int> SellValueByKey<T>(string kind, List<T> copies, Func<T, ModelId?> idOf, Func<T, int> durabilityOf, bool split)
     {
         var map = new Dictionary<string, int>();
         foreach (T copy in copies)
         {
             if (idOf(copy) is ModelId id)
             {
-                string key = ExtractionItemTiles.Key(id);
+                string key = split ? ExtractionItemTiles.DurabilityKey(id, durabilityOf(copy)) : ExtractionItemTiles.Key(id);
                 map[key] = map.GetValueOrDefault(key) + ShopStore.SellValue(kind, id, durabilityOf(copy));
             }
         }
@@ -1147,9 +1155,11 @@ public sealed partial class ShopScreen : CanvasLayer
         CollectSelectedCopies()
     {
         List<WarehouseCard> cards = TakeSelected(AvailableCards(_warehouse, _carry), _selectedCards,
-            c => ExtractionItemTiles.Key(c.Card.Id), c => c.Durability);
+            c => _splitByDurability ? ExtractionItemTiles.DurabilityKey(c.Card.Id, c.Durability) : ExtractionItemTiles.Key(c.Card.Id),
+            c => c.Durability);
         List<WarehouseRelic> relics = TakeSelected(AvailableRelics(_warehouse, _carry), _selectedRelics,
-            r => ExtractionItemTiles.Key(r.Relic.Id), r => r.Durability);
+            r => _splitByDurability ? ExtractionItemTiles.DurabilityKey(r.Relic.Id, r.Durability) : ExtractionItemTiles.Key(r.Relic.Id),
+            r => r.Durability);
         List<SerializablePotion> potions = TakeSelected(AvailablePotions(_warehouse, _carry), _selectedPotions,
             p => ExtractionItemTiles.Key(p.Id), _ => 0);
         int gold = cards.Sum(c => ShopStore.SellValue(ShopStore.KindCard, c.Card.Id!, c.Durability))

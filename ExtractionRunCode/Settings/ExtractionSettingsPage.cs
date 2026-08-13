@@ -124,6 +124,11 @@ public static class ExtractionSettingsPage
         static s => s.RelicDurability,
         static (s, v) => s.RelicDurability = v);
 
+    private static readonly ModSettingsValueBinding<ExtractionSettings, bool> SplitDurabilityBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.SplitDurabilityGroups,
+        static (s, v) => s.SplitDurabilityGroups = v);
+
     private static readonly ModSettingsValueBinding<ExtractionSettings, bool> CapacityEnabledBinding = new(
         Entry.ModId, DataKey, SaveScope.Global,
         static s => s.CarryCapacityEnabled,
@@ -299,7 +304,13 @@ public static class ExtractionSettingsPage
                     description: ExtractionLocalization.DurabilityOtherDescriptionText())
                 .AddIntSlider("durability_relic", ExtractionLocalization.DurabilityRelicText(),
                     RelicDurabilityBinding, MinDurabilitySlider, MaxDurabilitySlider, 1,
-                    description: ExtractionLocalization.DurabilityRelicDescriptionText()))
+                    description: ExtractionLocalization.DurabilityRelicDescriptionText())
+                // Display-only — no confirm, no run/lobby block, safe to flip mid-session (only affects the next
+                // refresh). Hidden while durability is OFF, where the split is a no-op (every copy sits at rarity max).
+                // 纯显示——无需确认、局内可改（只影响下次刷新）。耐久关闭时隐藏（此时拆分无意义——所有副本都在稀有度上限）。
+                .AddToggle("durability_split", ExtractionLocalization.SplitDurabilityText(),
+                    SplitDurabilityBinding, description: ExtractionLocalization.SplitDurabilityDescriptionText())
+                    .WithEntryVisibleWhen("durability_split", () => Current.DurabilityEnabled))
             .AddSection("shop", section => section
                 .WithTitle(ExtractionLocalization.ShopSectionTitleText())
                 .AddSlider("shop_buy_multiplier", ExtractionLocalization.ShopPriceMultiplierText(),
@@ -550,6 +561,8 @@ public static class ExtractionSettingsPage
             CardDurabilityOtherBinding.Save();
             RelicDurabilityBinding.Write(Current.RelicDurability);
             RelicDurabilityBinding.Save();
+            SplitDurabilityBinding.Write(Current.SplitDurabilityGroups);
+            SplitDurabilityBinding.Save();
             ShopPriceMultiplierBinding.Write(Current.ShopPriceMultiplier);
             ShopPriceMultiplierBinding.Save();
             ShopSellRatioBinding.Write(Current.ShopSellRatio);

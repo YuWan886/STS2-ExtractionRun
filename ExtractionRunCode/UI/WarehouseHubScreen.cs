@@ -10,6 +10,7 @@ using MegaCrit.Sts2.Core.Saves.Runs;
 using STS2RitsuLib.Ui.Toast;
 using ExtractionRun.Data;
 using ExtractionRun.Lifecycle;
+using ExtractionRun.Settings;
 
 namespace ExtractionRun.UI;
 
@@ -77,6 +78,11 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     private readonly WarehouseData _warehouse;
     private readonly CarryConfig _carry;
     private readonly bool _showDurability;
+
+    /// <summary>Whether copies of one card/relic at different durability render as separate tiles (durability ON + the
+    /// SplitDurabilityGroups setting). Drives the warehouse/carry grouping, the preview keys and click-to-add/remove.
+    /// 同种牌/遗物是否按耐久独立显示（耐久开启且设置开启）：驱动仓库/携带分组、预览键与点击带/取。 </summary>
+    private readonly bool _splitByDurability;
     private int _carryGold;
 
     /// <summary>The hub currently open in the scene tree (null when closed) — lets the console command refresh it after
@@ -142,6 +148,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         _carry = PendingCarryStore.Snapshot();
         _carryGold = _carry.Gold;
         _showDurability = WarehouseStore.IsDurabilityEnabled;
+        _splitByDurability = _showDurability && ExtractionSettingsPage.Current.SplitDurabilityGroups;
 
         // A pending carry saved before the base-only change may still hold upgraded/enchanted items. Normalize it in
         // place so carried items always match the (base-only) warehouse exactly — otherwise a stale +1 carry would
@@ -932,7 +939,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     /// </summary>
     private void Refresh()
     {
-        WarehouseCache.Ensure(_warehouse);
+        WarehouseCache.Ensure(_warehouse, _splitByDurability);
 
         int availableGold = Math.Max(0, _warehouse.Gold - _carryGold);
         _goldChipLabel.Text = ExtractionLocalization.GoldWarehouseText(availableGold);
@@ -978,17 +985,19 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         // An empty carry has nothing worth sharing as a gear code. 空携带没有值得分享的战备码。
         _generateButton.Disabled = CarryIsEmpty;
 
-        // Carried counts by item key (id-only), used to compute the available warehouse counts.
+        // Carried counts by item key (id-only, or id@durability when split), used to compute the available warehouse
+        // counts. Both sides of the preview use the same split flag so the keys line up.
+        // 携带计数按键（拆分时 id@耐久）——两侧预览用同一拆分标志，键才对得上。
         var carriedCards = new Dictionary<string, int>();
-        foreach (ExtractionItemTiles.CardGroup g in ExtractionItemTiles.GroupCards(_carry.Cards, loadArt: false))
+        foreach (ExtractionItemTiles.CardGroup g in ExtractionItemTiles.GroupCards(_carry.Cards, loadArt: false, _splitByDurability))
         {
-            carriedCards[ExtractionItemTiles.CardKey(g)] = g.Count;
+            carriedCards[ExtractionItemTiles.CardKey(g, _splitByDurability)] = g.Count;
         }
 
         var carriedRelics = new Dictionary<string, int>();
-        foreach (ExtractionItemTiles.RelicGroup g in ExtractionItemTiles.GroupRelics(_carry.Relics, loadArt: false))
+        foreach (ExtractionItemTiles.RelicGroup g in ExtractionItemTiles.GroupRelics(_carry.Relics, loadArt: false, _splitByDurability))
         {
-            carriedRelics[ExtractionItemTiles.RelicKey(g)] = g.Count;
+            carriedRelics[ExtractionItemTiles.RelicKey(g, _splitByDurability)] = g.Count;
         }
 
         var carriedPotions = new Dictionary<string, int>();
@@ -1043,11 +1052,11 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         }
         else
         {
-            foreach (ExtractionItemTiles.CardGroup g in ExtractionItemTiles.GroupCards(_carry.Cards, loadArt: false))
+            foreach (ExtractionItemTiles.CardGroup g in ExtractionItemTiles.GroupCards(_carry.Cards, loadArt: false, _splitByDurability))
             {
                 _carryCardList.AddChild(ExtractionItemTiles.MakeItemTile(g.Name, g.Pool, g.Count,
                     WarehouseCache.Resolve(g.PortraitPath), ExtractionItemTiles.ItemTileAction.Remove,
-                    () => RemoveFromCarryCards(g.Rep.Id),
+                    () => RemoveFromCarryCards(g.Rep.Id, g.Durability),
                     g.Rep.Id, _showDurability ? g.Durability : null));
             }
         }
@@ -1058,11 +1067,11 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         }
         else
         {
-            foreach (ExtractionItemTiles.RelicGroup g in ExtractionItemTiles.GroupRelics(_carry.Relics, loadArt: false))
+            foreach (ExtractionItemTiles.RelicGroup g in ExtractionItemTiles.GroupRelics(_carry.Relics, loadArt: false, _splitByDurability))
             {
                 _carryRelicList.AddChild(ExtractionItemTiles.MakeItemTile(g.Name, g.Pool, g.Count,
                     WarehouseCache.Resolve(g.IconPath), ExtractionItemTiles.ItemTileAction.Remove,
-                    () => RemoveFromCarryRelics(g.Rep.Id),
+                    () => RemoveFromCarryRelics(g.Rep.Id, g.Durability),
                     g.Rep.Id, _showDurability ? g.Durability : null));
             }
         }
@@ -1184,7 +1193,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         int filtered = 0;
         foreach (ExtractionItemTiles.CardGroup g in varieties)
         {
-            int available = g.Count - carried.GetValueOrDefault(ExtractionItemTiles.CardKey(g));
+            int available = g.Count - carried.GetValueOrDefault(ExtractionItemTiles.CardKey(g, _splitByDurability));
             if (available <= 0)
             {
                 continue; // Every copy is already staged to carry.
@@ -1216,7 +1225,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
                 {
                     if (g.Rep.Id is ModelId id)
                     {
-                        AddToCarryCards(id);
+                        AddToCarryCards(id, g.Durability);
                     }
                 },
                 g.Rep.Id, _showDurability ? g.Durability : null,
@@ -1243,7 +1252,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         int filtered = 0;
         foreach (ExtractionItemTiles.RelicGroup g in varieties)
         {
-            int available = g.Count - carried.GetValueOrDefault(ExtractionItemTiles.RelicKey(g));
+            int available = g.Count - carried.GetValueOrDefault(ExtractionItemTiles.RelicKey(g, _splitByDurability));
             if (available <= 0)
             {
                 continue;
@@ -1273,7 +1282,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
                 {
                     if (g.Rep.Id is ModelId id)
                     {
-                        AddToCarryRelics(id);
+                        AddToCarryRelics(id, g.Durability);
                     }
                 },
                 g.Rep.Id, _showDurability ? g.Durability : null,
@@ -1420,12 +1429,12 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     }
 
     /// <summary>
-    /// Carries the next lowest-durability warehouse copy of <paramref name="id"/> (worst gear first, Tarkov-style —
-    /// the copy most likely to be lost or broken is used before the fresh stock). The draft always holds its own
-    /// clones, so the warehouse instance is never mutated by carrying. 携带该 id 下一份最低耐久的仓库副本（先带最破——最可能
-    /// 战损/遗失的先消耗）。草稿持有自己的克隆，携带永不改动仓库实例。
+    /// Carries one warehouse copy of <paramref name="id"/>: with split display the click targets that tile's exact
+    /// durability; merged takes the next lowest-durability available copy (worst gear first, Tarkov-style). The draft
+    /// always holds its own clones, so the warehouse instance is never mutated by carrying. 携带该 id 的一份仓库副本：拆分显示
+    /// 时按点击瓦片的精确耐久取，合并时取下一份最低耐久（先带最破）。草稿持有自己的克隆，携带永不改动仓库实例。
     /// </summary>
-    private void AddToCarryCards(ModelId id)
+    private void AddToCarryCards(ModelId id, int durability)
     {
         // Belt-and-suspenders over the tile's Disabled state: the budget guard (OFF count cap / ON capacity) is the
         // single source of truth, so an enabled tile can never overdraw the shared pool.
@@ -1435,12 +1444,16 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
             return;
         }
 
-        int carriedCount = _carry.Cards.Count(c => c.Card.Id == id);
-        WarehouseCard? copy = _warehouse.Cards
-            .Where(c => c.Card.Id == id)
-            .OrderBy(c => c.Durability)
-            .Skip(carriedCount)
-            .FirstOrDefault();
+        WarehouseCard? copy = _splitByDurability
+            ? _warehouse.Cards
+                .Where(c => c.Card.Id == id && c.Durability == durability)
+                .Skip(_carry.Cards.Count(c => c.Card.Id == id && c.Durability == durability))
+                .FirstOrDefault()
+            : _warehouse.Cards
+                .Where(c => c.Card.Id == id)
+                .OrderBy(c => c.Durability)
+                .Skip(_carry.Cards.Count(c => c.Card.Id == id))
+                .FirstOrDefault();
         if (copy == null)
         {
             return;
@@ -1450,7 +1463,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         Refresh();
     }
 
-    private void AddToCarryRelics(ModelId id)
+    private void AddToCarryRelics(ModelId id, int durability)
     {
         CarryBudget budget = CarryBudget.FromSettings();
         if (budget.MoreAllowed(_carry, CarryCodec.ItemKind.Relic, id) <= 0)
@@ -1458,12 +1471,16 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
             return;
         }
 
-        int carriedCount = _carry.Relics.Count(r => r.Relic.Id == id);
-        WarehouseRelic? copy = _warehouse.Relics
-            .Where(r => r.Relic.Id == id)
-            .OrderBy(r => r.Durability)
-            .Skip(carriedCount)
-            .FirstOrDefault();
+        WarehouseRelic? copy = _splitByDurability
+            ? _warehouse.Relics
+                .Where(r => r.Relic.Id == id && r.Durability == durability)
+                .Skip(_carry.Relics.Count(r => r.Relic.Id == id && r.Durability == durability))
+                .FirstOrDefault()
+            : _warehouse.Relics
+                .Where(r => r.Relic.Id == id)
+                .OrderBy(r => r.Durability)
+                .Skip(_carry.Relics.Count(r => r.Relic.Id == id))
+                .FirstOrDefault();
         if (copy == null)
         {
             return;
@@ -1490,17 +1507,19 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         Refresh();
     }
 
-    /// <summary>Drops the lowest-durability carried copy of <paramref name="id"/> (removing any copy changes the
-    /// count; the worst-first invariant only constrains additions). 移除该 id 携带副本中最低耐久的一份（移除任意一份只影响
-    /// 数量；先带最破的不变式只约束添加）。</summary>
-    private void RemoveFromCarryCards(ModelId? id)
+    /// <summary>Drops a carried copy of <paramref name="id"/>: with split display the click removes that tile's exact
+    /// durability; merged removes the lowest-durability carried copy. 移除该 id 携带的一份：拆分显示时按点击瓦片的精确耐久取，
+    /// 合并时移除最低耐久的一份。</summary>
+    private void RemoveFromCarryCards(ModelId? id, int durability)
     {
         if (id == null)
         {
             return;
         }
 
-        WarehouseCard? copy = _carry.Cards.Where(c => c.Card.Id == id).OrderBy(c => c.Durability).FirstOrDefault();
+        WarehouseCard? copy = _splitByDurability
+            ? _carry.Cards.FirstOrDefault(c => c.Card.Id == id && c.Durability == durability)
+            : _carry.Cards.Where(c => c.Card.Id == id).OrderBy(c => c.Durability).FirstOrDefault();
         if (copy != null)
         {
             _carry.Cards.Remove(copy);
@@ -1509,14 +1528,16 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         Refresh();
     }
 
-    private void RemoveFromCarryRelics(ModelId? id)
+    private void RemoveFromCarryRelics(ModelId? id, int durability)
     {
         if (id == null)
         {
             return;
         }
 
-        WarehouseRelic? copy = _carry.Relics.Where(r => r.Relic.Id == id).OrderBy(r => r.Durability).FirstOrDefault();
+        WarehouseRelic? copy = _splitByDurability
+            ? _carry.Relics.FirstOrDefault(r => r.Relic.Id == id && r.Durability == durability)
+            : _carry.Relics.Where(r => r.Relic.Id == id).OrderBy(r => r.Durability).FirstOrDefault();
         if (copy != null)
         {
             _carry.Relics.Remove(copy);

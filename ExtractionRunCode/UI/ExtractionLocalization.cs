@@ -120,6 +120,13 @@ public static class ExtractionLocalization
         ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.relic.description",
             "Max durability granted to a new relic (all relics share one value).");
 
+    public static ModSettingsText SplitDurabilityText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.split", "Show stacks by durability");
+
+    public static ModSettingsText SplitDurabilityDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.durability.split.description",
+            "Show copies of the same card or relic with different durability as separate tiles, each with its own badge, instead of merging them into one tile labeled with the worst copy.");
+
     public static ModSettingsText CapacitySectionTitleText() =>
         ModSettingsText.LocString(SettingsTable, "extractionrun.settings.section.capacity.title", "Backpack Capacity");
 

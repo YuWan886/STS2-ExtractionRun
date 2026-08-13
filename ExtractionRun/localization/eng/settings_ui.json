@@ -29,6 +29,8 @@
   "extractionrun.settings.durability.other.description": "Max durability granted to cards of any other rarity (event/token/status/curse/quest, mod cards).",
   "extractionrun.settings.durability.relic": "Relic durability",
   "extractionrun.settings.durability.relic.description": "Max durability granted to a new relic (all relics share one value).",
+  "extractionrun.settings.durability.split": "Show stacks by durability",
+  "extractionrun.settings.durability.split.description": "Show copies of the same card or relic with different durability as separate tiles.",
   "extractionrun.settings.section.capacity.title": "Backpack Capacity",
   "extractionrun.settings.capacity.enabled": "Backpack capacity system",
   "extractionrun.settings.capacity.enabled.description": "Limit carried cards and relics by a shared backpack capacity (cards cost by rarity, relics a flat amount). Disabling reverts to the max card / relic count caps.",

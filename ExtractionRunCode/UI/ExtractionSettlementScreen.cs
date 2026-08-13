@@ -2,6 +2,7 @@ using Godot;
 using MegaCrit.Sts2.Core.Models;
 using ExtractionRun.Data;
 using ExtractionRun.Lifecycle;
+using ExtractionRun.Settings;
 
 namespace ExtractionRun.UI;
 
@@ -150,12 +151,17 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
 
         bool success = _result.Success;
         bool showDurability = WarehouseStore.IsDurabilityEnabled;
+        // Split by durability so each deposited stack shows its exact post-extraction durability (no merged "×3 耐久1"
+        // lie). The broken sections are unaffected — every broken copy sits at 0, so the split key merges them back.
+        // 按耐久拆分，各入库堆显示自己撤离后的精确耐久（不再合并成「×3 耐久1」的谎言）。战损区不受影响——战损副本全在 0，
+        // 拆分键把它们合并回一块。
+        bool splitByDurability = showDurability && ExtractionSettingsPage.Current.SplitDurabilityGroups;
 
         body.AddChild(BuildSection(
             success
                 ? ExtractionLocalization.SettlementCardsText(_result.Cards.Count)
                 : ExtractionLocalization.SettlementLostCardsText(_result.Cards.Count),
-            ExtractionItemTiles.GroupCards(_result.Cards)
+            ExtractionItemTiles.GroupCards(_result.Cards, splitByDurability: splitByDurability)
                 .Select(g => (g.Name, g.Pool, g.Count, g.Texture, g.Rep.Id, showDurability ? g.Durability : (int?)null))));
 
         body.AddChild(new HSeparator());
@@ -164,7 +170,7 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
             success
                 ? ExtractionLocalization.SettlementRelicsText(_result.Relics.Count)
                 : ExtractionLocalization.SettlementLostRelicsText(_result.Relics.Count),
-            ExtractionItemTiles.GroupRelics(_result.Relics)
+            ExtractionItemTiles.GroupRelics(_result.Relics, splitByDurability: splitByDurability)
                 .Select(g => (g.Name, g.Pool, g.Count, g.Texture, g.Rep.Id, showDurability ? g.Durability : (int?)null))));
 
         // Expired relics (used up / melted) were dropped on extraction — list them for info, never deposited.
@@ -176,7 +182,8 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
             body.AddChild(BuildSection(
                 ExtractionLocalization.SettlementExpiredRelicsText(_result.ExpiredRelics.Count),
                 ExtractionItemTiles.GroupRelics(
-                    _result.ExpiredRelics.Select(sr => new WarehouseRelic { Relic = sr }).ToList())
+                    _result.ExpiredRelics.Select(sr => new WarehouseRelic { Relic = sr }).ToList(),
+                    splitByDurability: splitByDurability)
                     .Select(g => (g.Name, g.Pool, g.Count, g.Texture, g.Rep.Id, (int?)null))));
         }
 
@@ -189,7 +196,7 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
 
             body.AddChild(BuildSection(
                 ExtractionLocalization.SettlementBrokenCardsText(_result.BrokenCards.Count),
-                ExtractionItemTiles.GroupCards(_result.BrokenCards)
+                ExtractionItemTiles.GroupCards(_result.BrokenCards, splitByDurability: splitByDurability)
                     .Select(g => (g.Name, g.Pool, g.Count, g.Texture, g.Rep.Id, (int?)0))));
         }
 
@@ -199,7 +206,7 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
 
             body.AddChild(BuildSection(
                 ExtractionLocalization.SettlementBrokenRelicsText(_result.BrokenRelics.Count),
-                ExtractionItemTiles.GroupRelics(_result.BrokenRelics)
+                ExtractionItemTiles.GroupRelics(_result.BrokenRelics, splitByDurability: splitByDurability)
                     .Select(g => (g.Name, g.Pool, g.Count, g.Texture, g.Rep.Id, (int?)0))));
         }
 

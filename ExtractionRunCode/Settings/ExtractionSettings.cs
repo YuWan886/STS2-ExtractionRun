@@ -54,6 +54,14 @@ public sealed class ExtractionSettings
     public int RelicDurability { get; set; } = 3;
 
     /// <summary>
+    /// Whether copies of the same card/relic with different durability show as separate tiles (each its own badge) or
+    /// merge into one tile showing the worst copy. Display-only: never affects stored durability, consumption or gear
+    /// codes. Default ON. 同种卡牌/遗物是否按耐久度独立显示——不同耐久的副本各占一块瓦片（各显其角标），还是合并为一块只显
+    /// 最破的一份。纯显示：不影响存储耐久、消耗或战备码。默认开启。
+    /// </summary>
+    public bool SplitDurabilityGroups { get; set; } = true;
+
+    /// <summary>
     /// Whether the backpack capacity system is active. ON: carry is limited by a unified capacity pool — cards cost by
     /// rarity, relics a flat amount, cards + relics share the same pool (potions/gold free). OFF: the legacy
     /// <see cref="MaxCarryCards"/>/<see cref="MaxCarryRelics"/> per-kind count caps apply.
@@ -134,6 +142,7 @@ public sealed class ExtractionSettings
         CardDurabilityAncient = 1;
         CardDurabilityOther = 1;
         RelicDurability = 3;
+        SplitDurabilityGroups = true;
         CarryCapacityEnabled = true;
         CarryCapacity = 15;
         CapacityWeightBasicCommon = 1;
