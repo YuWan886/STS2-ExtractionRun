@@ -4,6 +4,24 @@ using ExtractionRun.Data;
 namespace ExtractionRun.Lifecycle;
 
 /// <summary>
+/// How the run ended — drives the settlement screen's header and which sections render.
+/// <list type="bullet">
+/// <item>Victory: run won, full deposit + clear reward.</item>
+/// <item>Defeat: run lost, carried loadout lost (shown for info).</item>
+/// <item>ExtractionPoint: the party extracted at the 撤离点 — a defeat for scoring, but the selected loot IS deposited
+/// (durability deducted like a victory, no clear reward).</item>
+/// </list>
+/// 跑局的结束方式——决定结算屏标题与渲染哪些分区：胜利=通关全额入仓+清关奖励；失败=携带装备损失（仅提示）；从撤离点撤离=
+/// 按失败计分但选中的战利品正常入仓（耐久按胜利扣，无清关奖励）。
+/// </summary>
+public enum ExtractionSettlementKind
+{
+    Defeat,
+    Victory,
+    ExtractionPoint,
+}
+
+/// <summary>
 /// The outcome of one extraction run, captured at run end for the post-run settlement screen.
 /// <list type="bullet">
 /// <item>Success: the loot deposited into the warehouse (final deck minus clones, relics, potions, gold). Each card /
@@ -16,6 +34,9 @@ namespace ExtractionRun.Lifecycle;
 /// </summary>
 public sealed class ExtractionSettlementResult
 {
+    /// <summary>How the run ended. 跑局如何结束。</summary>
+    public ExtractionSettlementKind Kind { get; set; } = ExtractionSettlementKind.Defeat;
+
     /// <summary>True = extracted successfully (run won and local player alive); false = lost. 是否撤离成功。</summary>
     public bool Success { get; set; }
 

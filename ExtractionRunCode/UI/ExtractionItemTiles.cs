@@ -864,7 +864,15 @@ public static class ExtractionItemTiles
         return int.MaxValue;
     }
 
-    private static int CardRarityIndex(CardRarity rarity) => rarity switch
+    /// <summary>Pool-order index for an id (unresolvable → int.MaxValue). Exposed for id-level sorting in the 撤离点 panel.
+    /// 某 id 的池序索引（无法解析 → int.MaxValue），供撤离点面板按 id 排序。</summary>
+    public static int CardPoolIndex(ModelId? id) => PoolOrderIndex(CardPoolOrder, CardPoolSlug(id));
+
+    public static int RelicPoolIndex(ModelId? id) => PoolOrderIndex(RelicPoolOrder, RelicPoolSlug(id));
+
+    public static int PotionPoolIndex(ModelId? id) => PoolOrderIndex(PotionPoolOrder, PotionPoolSlug(id));
+
+    public static int CardRarityIndex(CardRarity rarity) => rarity switch
     {
         CardRarity.Basic => 0,
         CardRarity.Common => 1,
@@ -879,7 +887,7 @@ public static class ExtractionItemTiles
         _ => 10,
     };
 
-    private static int RelicRarityIndex(RelicRarity rarity) => rarity switch
+    public static int RelicRarityIndex(RelicRarity rarity) => rarity switch
     {
         RelicRarity.Starter => 0,
         RelicRarity.Common => 1,
@@ -891,7 +899,7 @@ public static class ExtractionItemTiles
         _ => 7,
     };
 
-    private static int PotionRarityIndex(PotionRarity rarity) => rarity switch
+    public static int PotionRarityIndex(PotionRarity rarity) => rarity switch
     {
         PotionRarity.Common => 0,
         PotionRarity.Uncommon => 1,

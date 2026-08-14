@@ -100,14 +100,12 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
 
         var title = new Label
         {
-            Text = _result.Success
-                ? ExtractionLocalization.SettlementSuccessTitleText()
-                : ExtractionLocalization.SettlementFailTitleText(),
+            Text = TitleText(),
         };
         title.AddThemeFontOverride("font", ExtractionTheme.Bold);
         title.AddThemeFontSizeOverride("font_size", ExtractionTheme.FontSizeTitle);
         title.AddThemeColorOverride("font_color",
-            _result.Success ? ExtractionTheme.Primary : ExtractionTheme.Text);
+            _result.Kind == ExtractionSettlementKind.Defeat ? ExtractionTheme.Text : ExtractionTheme.Primary);
         header.AddChild(title);
 
         header.AddChild(MakeSpacer());
@@ -128,15 +126,27 @@ public sealed partial class ExtractionSettlementScreen : CanvasLayer
     {
         var lede = new Label
         {
-            Text = _result.Success
-                ? ExtractionLocalization.SettlementSuccessLedeText()
-                : ExtractionLocalization.SettlementFailLedeText(),
+            Text = LedeText(),
             AutowrapMode = TextServer.AutowrapMode.WordSmart,
         };
         lede.AddThemeColorOverride("font_color", ExtractionTheme.TextSecondary);
         lede.AddThemeFontSizeOverride("font_size", ExtractionTheme.FontSizeSmall);
         return lede;
     }
+
+    private string TitleText() => _result.Kind switch
+    {
+        ExtractionSettlementKind.Victory => ExtractionLocalization.SettlementSuccessTitleText(),
+        ExtractionSettlementKind.ExtractionPoint => ExtractionLocalization.ExtractionPointSettlementTitleText(),
+        _ => ExtractionLocalization.SettlementFailTitleText(),
+    };
+
+    private string LedeText() => _result.Kind switch
+    {
+        ExtractionSettlementKind.Victory => ExtractionLocalization.SettlementSuccessLedeText(),
+        ExtractionSettlementKind.ExtractionPoint => ExtractionLocalization.ExtractionPointSettlementLedeText(),
+        _ => ExtractionLocalization.SettlementFailLedeText(),
+    };
 
     private Control BuildBody()
     {

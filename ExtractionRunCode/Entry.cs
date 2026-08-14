@@ -26,6 +26,10 @@ public static class Entry
         RitsuLibFramework.EnsureGodotScriptsRegistered(assembly, Logger);
         ModTypeDiscoveryHub.RegisterModAssembly(ModId, assembly);
 
+        // Legacy hosts (0.107.1) need the content models' [SavedProperty] props registered in their
+        // SavedPropertiesTypeCache; 0.111+ registers them natively. 旧版主机需手动注册内容模型的 [SavedProperty] 属性。
+        SavedPropertyCacheInjection.Register();
+
         using (RitsuLibFramework.BeginModDataRegistration(ModId))
         {
             WarehouseStore.Register();

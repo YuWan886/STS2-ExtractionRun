@@ -1,0 +1,12 @@
+{
+  "EXTRACTION_POINT_EVENT.title": "Extraction Point",
+  "EXTRACTION_POINT_EVENT.pages.INITIAL.description": "You found an extraction point. Extracting here ends the run: it counts as a defeat, but the items you carry out are deposited in the warehouse (durability is deducted as on a victory; no clear reward).",
+  "EXTRACTION_POINT_EVENT.pages.INITIAL.options.EXTRACT.title": "Normal Extract",
+  "EXTRACTION_POINT_EVENT.pages.INITIAL.options.EXTRACT.description": "Choose which cards and relics to carry out ([blue]{Capacity}[/blue] capacity this act); potions and gold are carried in full.",
+  "EXTRACTION_POINT_EVENT.pages.INITIAL.options.GOLD_EXTRACT.title": "Gold Extract",
+  "EXTRACTION_POINT_EVENT.pages.INITIAL.options.GOLD_EXTRACT.description": "Pay [red]{Fee}[/red] [gold]Gold[/gold] to carry out every card, relic, potion and the remaining gold.",
+  "EXTRACTION_POINT_EVENT.pages.INITIAL.options.PASS.title": "Pass",
+  "EXTRACTION_POINT_EVENT.pages.INITIAL.options.PASS.description": "Move on without extracting. No extraction point appears again this run.",
+  "EXTRACTION_POINT_EVENT.pages.PASS.description": "You leave the extraction point behind and continue onward.",
+  "EXTRACTION_POINT_EVENT.loss": "{character} escaped the Spire at the [gold]{event}[/gold]."
+}

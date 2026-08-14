@@ -56,11 +56,20 @@ public static class CharacterSelectPatch
     [HarmonyPatch(typeof(NCharacterSelectScreen), nameof(NCharacterSelectScreen.BeginRun))]
     private static class BeginRunPatch
     {
-        private static void Prefix(IReadOnlyList<ModifierModel> modifiers)
+        private static void Prefix(ref IReadOnlyList<ModifierModel> modifiers)
         {
             if (modifiers.Count > 0)
             {
                 ExtractionRunContext.PendingRunModifiers = modifiers;
+                // The base game only ever ignores this parameter: it logs "Modifiers list is not empty while starting
+                // a standard run" + a full stack trace, then passes an empty array to StartNew*Run. We already captured
+                // the list for ExtractionRunStart to restore at NGame.Start*Run, so hand the original an empty list to
+                // keep that error out of the log. The LobbyBeginRunMessage (MP) is built in BeginRunForAllPlayers before
+                // this runs, so clients still receive the modifier from the message.
+                // 基础游戏只会忽略该参数：打印「standard run 修正项列表非空」+ 完整堆栈，再向 StartNew*Run 传空数组。修正项
+                // 已暂存供 ExtractionRunStart 在 NGame.Start*Run 恢复，此处把空列表交给原方法以消除这条报错。MP 的
+                // LobbyBeginRunMessage 在 BeginRunForAllPlayers 中先于本方法构建，客机仍会从消息里收到修正项。
+                modifiers = Array.Empty<ModifierModel>();
             }
         }
     }
@@ -111,6 +120,11 @@ public static class CharacterSelectPatch
             ExtractionCarrySync.StagePendingCarry(lobby, lobby.NetService.NetId);
             ExtractionCarrySync.ApplyExtractionModifier(lobby);
 
+            // Host-authoritative 撤离点 settings: the host broadcasts them right after applying the modifier, so every
+            // client already in the lobby has them before the run starts (the all-ready gate holds the run until then).
+            // 撤离点主机权威设置：主机在应用修正项后随即广播，已在厅内的客机在开跑前（全员就绪门）即持有该值。
+            ExtractionPointSettingsSync.BroadcastSettings(lobby.NetService);
+
             // The run seed (host/singleplayer only): injected before BeginRun so the host's begin-run message carries
             // it to every machine — overriding the seed in NGame.Start*Run would desync (clients use the message seed).
             // 注入跑局种子（仅主机/单机）：在 BeginRun 之前写入大厅，主机 begin-run 消息随之把它带给所有机器——若改在
@@ -146,6 +160,10 @@ public static class CharacterSelectPatch
             // 客机加入搜打撤房间：强制打开仓库界面，配置完成后才能进入大厅。携带只在该模态「确认」时暂存进大厅
             // （ConfirmCarryForClient），此处不暂存——否则会把确认前的旧携带推到主机，若确认重暂存推送失败，开跑
             // 就会消耗这份陈旧携带而非客机真正确认的内容，造成物资被吞。
+            // A late-joining client may have missed the host's settings broadcast — ask for a copy now (the run can't
+            // start until the client confirms, so the reply always lands before act generation). 后加入的客机可能错过
+            // 主机广播——此刻请求一份（客机确认前开跑不会发生，应答必然早于章节生成落地）。
+            ExtractionPointSettingsSync.RequestFromHost(lobby.NetService);
             OpenCarrySetupModal(screen, lobby);
         }
         else

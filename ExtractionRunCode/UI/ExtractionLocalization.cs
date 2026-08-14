@@ -255,6 +255,51 @@ public static class ExtractionLocalization
         ModSettingsText.LocString(SettingsTable, "extractionrun.settings.loot.skipKey.description",
             "Press this key to reveal every remaining item instantly. Clicking the item being searched reveals it and advances.");
 
+    public static ModSettingsText ExtractionPointSectionTitleText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.section.extractionPoint.title", "Extraction Point");
+
+    public static ModSettingsText ExtractionPointCapacityAct1Text() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.extractionPoint.capacityAct1", "Act 1 carry capacity");
+
+    public static ModSettingsText ExtractionPointCapacityAct1DescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.extractionPoint.capacityAct1.description",
+            "Capacity for the carry-out panel in act 1 (rarity-weight slots, cards + relics share the pool).");
+
+    public static ModSettingsText ExtractionPointCapacityAct2Text() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.extractionPoint.capacityAct2", "Act 2 carry capacity");
+
+    public static ModSettingsText ExtractionPointCapacityAct2DescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.extractionPoint.capacityAct2.description",
+            "Capacity for the carry-out panel in act 2.");
+
+    public static ModSettingsText ExtractionPointCapacityAct3Text() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.extractionPoint.capacityAct3", "Act 3+ carry capacity");
+
+    public static ModSettingsText ExtractionPointCapacityAct3DescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.extractionPoint.capacityAct3.description",
+            "Capacity for the carry-out panel in act 3 and beyond.");
+
+    public static ModSettingsText ExtractionPointGoldFeeAct1Text() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.extractionPoint.goldFeeAct1", "Act 1 gold fee");
+
+    public static ModSettingsText ExtractionPointGoldFeeAct1DescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.extractionPoint.goldFeeAct1.description",
+            "Base gold cost of the 金币撤离 option in act 1; the cost compounds by the rate below each act.");
+
+    public static ModSettingsText ExtractionPointGoldFeeRateText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.extractionPoint.goldFeeRate", "Gold fee growth per act");
+
+    public static ModSettingsText ExtractionPointGoldFeeRateDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.extractionPoint.goldFeeRate.description",
+            "Compounded per-act increase of the gold fee (e.g. 20% = 100 → 120 → 144).");
+
+    public static ModSettingsText ExtractionPointActChanceText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.extractionPoint.actChance", "Per-act appearance chance");
+
+    public static ModSettingsText ExtractionPointActChanceDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.extractionPoint.actChance.description",
+            "Chance each act rolls an extraction point at act start. At most one is ever placed per run.");
+
     public static ModSettingsText ResetSectionTitleText() =>
         ModSettingsText.LocString(SettingsTable, "extractionrun.settings.section.reset.title", "Reset");
 
@@ -467,6 +512,23 @@ public static class ExtractionLocalization
     public static string SettlementGoldText(int gold) => Formatted("EXTRACTION_RUN.settlement.gold", gold);
     public static string SettlementBackText() => Text("EXTRACTION_RUN.settlement.back");
     public static string SettlementEmptyText() => Text("EXTRACTION_RUN.settlement.empty");
+    public static string ExtractionPointSettlementTitleText() => Text("EXTRACTION_RUN.settlement.extractionPoint.title");
+    public static string ExtractionPointSettlementLedeText() => Text("EXTRACTION_RUN.settlement.extractionPoint.lede");
+
+    // ----- Extraction point panel 撤离点面板 -----
+
+    public static string ExtractionPointPanelTitleText() => Text("EXTRACTION_RUN.extractionPoint.panel.title");
+    public static string ExtractionPointCardSectionText() => Text("EXTRACTION_RUN.extractionPoint.panel.cards");
+    public static string ExtractionPointRelicSectionText() => Text("EXTRACTION_RUN.extractionPoint.panel.relics");
+    public static string ExtractionPointCapacityText(int used, int capacity) =>
+        Formatted("EXTRACTION_RUN.extractionPoint.panel.capacity", used, capacity);
+    public static string ExtractionPointPotionsAllText(int count) =>
+        Formatted("EXTRACTION_RUN.extractionPoint.panel.potionsAll", count);
+    public static string ExtractionPointGoldAllText(int gold) =>
+        Formatted("EXTRACTION_RUN.extractionPoint.panel.goldAll", gold);
+    public static string ExtractionPointEmptyHeaderText() => Text("EXTRACTION_RUN.extractionPoint.panel.empty.header");
+    public static string ExtractionPointEmptyBodyText() => Text("EXTRACTION_RUN.extractionPoint.panel.empty.body");
+    public static string ExtractionPointConfirmText() => Text("EXTRACTION_RUN.extractionPoint.panel.confirm");
 
     /// <summary>
     /// Localized source-pool display name for an item tile. Character pools (ironclad / silent / defect /

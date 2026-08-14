@@ -110,6 +110,18 @@
   "EXTRACTION_RUN.settlement.gold": "金币 {0}",
   "EXTRACTION_RUN.settlement.back": "返回",
   "EXTRACTION_RUN.settlement.empty": "无",
+  "EXTRACTION_RUN.settlement.extractionPoint.title": "从撤离点撤离",
+  "EXTRACTION_RUN.settlement.extractionPoint.lede": "你从撤离点带出了以下物品：",
+
+  "EXTRACTION_RUN.extractionPoint.panel.title": "撤离点 · 普通撤离",
+  "EXTRACTION_RUN.extractionPoint.panel.cards": "带出卡牌",
+  "EXTRACTION_RUN.extractionPoint.panel.relics": "带出遗物",
+  "EXTRACTION_RUN.extractionPoint.panel.capacity": "带出 {0}/{1}",
+  "EXTRACTION_RUN.extractionPoint.panel.potionsAll": "药水（{0} 瓶）将全部带出",
+  "EXTRACTION_RUN.extractionPoint.panel.goldAll": "金币（{0}）将全部带出",
+  "EXTRACTION_RUN.extractionPoint.panel.empty.header": "确认撤离",
+  "EXTRACTION_RUN.extractionPoint.panel.empty.body": "你未选择任何卡牌或遗物，只有药水与金币会带出。确定要撤离吗？",
+  "EXTRACTION_RUN.extractionPoint.panel.confirm": "确认撤离",
 
   "EXTRACTION_RUN.pool.ironclad": "铁甲战士",
   "EXTRACTION_RUN.pool.silent": "静默猎手",

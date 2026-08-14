@@ -1,0 +1,12 @@
+{
+  "EXTRACTION_POINT_EVENT.title": "撤离点",
+  "EXTRACTION_POINT_EVENT.pages.INITIAL.description": "你找到了一处撤离点。\n从这里撤离会结束这局跑局：按失败结算，但选中的物品会带回仓库（耐久会扣除，不发放通关奖励）。",
+  "EXTRACTION_POINT_EVENT.pages.INITIAL.options.EXTRACT.title": "普通撤离",
+  "EXTRACTION_POINT_EVENT.pages.INITIAL.options.EXTRACT.description": "选择要带出的卡牌与遗物（受容量限制，本幕共 [blue]{Capacity}[/blue] 容量），药水与金币全部带出。",
+  "EXTRACTION_POINT_EVENT.pages.INITIAL.options.GOLD_EXTRACT.title": "金币撤离",
+  "EXTRACTION_POINT_EVENT.pages.INITIAL.options.GOLD_EXTRACT.description": "花费 [red]{Fee}[/red] 金币，所有卡牌、遗物、药水与剩余金币全部带出。",
+  "EXTRACTION_POINT_EVENT.pages.INITIAL.options.PASS.title": "路过",
+  "EXTRACTION_POINT_EVENT.pages.INITIAL.options.PASS.description": "继续前行，不撤离。本局不会再出现撤离点。",
+  "EXTRACTION_POINT_EVENT.pages.PASS.description": "你离开了撤离点，继续前行。",
+  "EXTRACTION_POINT_EVENT.loss": "{character}从[gold]{event}[/gold]撤离，离开了高塔。"
+}

@@ -51,6 +51,14 @@ public static class ExtractionSettingsPage
     private const int MinLootSlider = 1;
     private const int MaxLootSlider = 20;
 
+    /// <summary>撤离点 ordinary-extraction capacity slider range. 撤离点「普通撤离」容量滑条范围。</summary>
+    private const int MinExtractionPointCapacitySlider = 5;
+    private const int MaxExtractionPointCapacitySlider = 99;
+
+    /// <summary>撤离点 gold-fee base slider range. 撤离点「金币撤离」基础费用滑条范围。</summary>
+    private const int MinExtractionPointFeeSlider = 0;
+    private const int MaxExtractionPointFeeSlider = 999;
+
     /// <summary>Guards the durability-toggle handler against re-entry (the revert write re-fires ValueWritten) and
     /// against the reset button flipping the toggle without a confirm dialog. 耐久切换处理器防重入（回退写会再次触发
     /// ValueWritten），也用于重置按钮直接翻转开关而不弹确认框。</summary>
@@ -214,6 +222,36 @@ public static class ExtractionSettingsPage
         static s => s.LootAnimationSkipKey,
         static (s, v) => s.LootAnimationSkipKey = v);
 
+    private static readonly ModSettingsValueBinding<ExtractionSettings, int> ExtractionPointCapacityAct1Binding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.ExtractionPointCapacityAct1,
+        static (s, v) => s.ExtractionPointCapacityAct1 = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, int> ExtractionPointCapacityAct2Binding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.ExtractionPointCapacityAct2,
+        static (s, v) => s.ExtractionPointCapacityAct2 = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, int> ExtractionPointCapacityAct3Binding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.ExtractionPointCapacityAct3,
+        static (s, v) => s.ExtractionPointCapacityAct3 = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, int> ExtractionPointGoldFeeAct1Binding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.ExtractionPointGoldFeeAct1,
+        static (s, v) => s.ExtractionPointGoldFeeAct1 = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, double> ExtractionPointGoldFeeRateBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.ExtractionPointGoldFeeRate,
+        static (s, v) => s.ExtractionPointGoldFeeRate = v);
+
+    private static readonly ModSettingsValueBinding<ExtractionSettings, double> ExtractionPointActChanceBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.ExtractionPointActChance,
+        static (s, v) => s.ExtractionPointActChance = v);
+
     public static ExtractionSettings Current =>
         RitsuLibFramework.GetDataStore(Entry.ModId).Get<ExtractionSettings>(DataKey);
 
@@ -350,6 +388,35 @@ public static class ExtractionSettingsPage
                     LootSkipKeyBinding, allowModifierOnly: false,
                     description: ExtractionLocalization.LootSkipKeyDescriptionText())
                     .WithEntryVisibleWhen("loot_skip_key", () => Current.LootAnimationEnabled))
+            .AddSection("extraction_point", section => section
+                .WithTitle(ExtractionLocalization.ExtractionPointSectionTitleText())
+                // Host-authoritative: the numbers a client enforces come from the host's machine, synced via the
+                // custom settings message; they're locked while a run/lobby is active (see the networking rule).
+                // 主机权威：客机执行的是主机的数值（经自定义设置消息同步）；局内/大厅中锁定。
+                .AddIntSlider("extraction_point_capacity_act1",
+                    ExtractionLocalization.ExtractionPointCapacityAct1Text(),
+                    ExtractionPointCapacityAct1Binding, MinExtractionPointCapacitySlider, MaxExtractionPointCapacitySlider, 1,
+                    description: ExtractionLocalization.ExtractionPointCapacityAct1DescriptionText())
+                .AddIntSlider("extraction_point_capacity_act2",
+                    ExtractionLocalization.ExtractionPointCapacityAct2Text(),
+                    ExtractionPointCapacityAct2Binding, MinExtractionPointCapacitySlider, MaxExtractionPointCapacitySlider, 1,
+                    description: ExtractionLocalization.ExtractionPointCapacityAct2DescriptionText())
+                .AddIntSlider("extraction_point_capacity_act3",
+                    ExtractionLocalization.ExtractionPointCapacityAct3Text(),
+                    ExtractionPointCapacityAct3Binding, MinExtractionPointCapacitySlider, MaxExtractionPointCapacitySlider, 1,
+                    description: ExtractionLocalization.ExtractionPointCapacityAct3DescriptionText())
+                .AddIntSlider("extraction_point_gold_fee_act1",
+                    ExtractionLocalization.ExtractionPointGoldFeeAct1Text(),
+                    ExtractionPointGoldFeeAct1Binding, MinExtractionPointFeeSlider, MaxExtractionPointFeeSlider, 1,
+                    description: ExtractionLocalization.ExtractionPointGoldFeeAct1DescriptionText())
+                .AddSlider("extraction_point_gold_fee_rate",
+                    ExtractionLocalization.ExtractionPointGoldFeeRateText(),
+                    ExtractionPointGoldFeeRateBinding, 0.0, 1.0, 0.05,
+                    static d => $"{d:P0}", description: ExtractionLocalization.ExtractionPointGoldFeeRateDescriptionText())
+                .AddSlider("extraction_point_act_chance",
+                    ExtractionLocalization.ExtractionPointActChanceText(),
+                    ExtractionPointActChanceBinding, 0.0, 1.0, 0.05,
+                    static d => $"{d:P0}", description: ExtractionLocalization.ExtractionPointActChanceDescriptionText()))
             .AddSection("reset", section => section
                 .WithTitle(ExtractionLocalization.ResetSectionTitleText())
                 .AddButton(
@@ -581,6 +648,18 @@ public static class ExtractionSettingsPage
             LootOtherBinding.Save();
             LootSkipKeyBinding.Write(Current.LootAnimationSkipKey);
             LootSkipKeyBinding.Save();
+            ExtractionPointCapacityAct1Binding.Write(Current.ExtractionPointCapacityAct1);
+            ExtractionPointCapacityAct1Binding.Save();
+            ExtractionPointCapacityAct2Binding.Write(Current.ExtractionPointCapacityAct2);
+            ExtractionPointCapacityAct2Binding.Save();
+            ExtractionPointCapacityAct3Binding.Write(Current.ExtractionPointCapacityAct3);
+            ExtractionPointCapacityAct3Binding.Save();
+            ExtractionPointGoldFeeAct1Binding.Write(Current.ExtractionPointGoldFeeAct1);
+            ExtractionPointGoldFeeAct1Binding.Save();
+            ExtractionPointGoldFeeRateBinding.Write(Current.ExtractionPointGoldFeeRate);
+            ExtractionPointGoldFeeRateBinding.Save();
+            ExtractionPointActChanceBinding.Write(Current.ExtractionPointActChance);
+            ExtractionPointActChanceBinding.Save();
         }
         finally
         {

@@ -127,6 +127,24 @@ public sealed class ExtractionSettings
     /// 跳过整段剩余搜刮序列的按键（RitsuLib 热键绑定串，如 "Space"）。</summary>
     public string LootAnimationSkipKey { get; set; } = "Space";
 
+    /// <summary>普通撤离的带出容量（稀有度重量制）——第一幕。撤离点事件三选项之「普通撤离」的容量上限。Host-authoritative。</summary>
+    public int ExtractionPointCapacityAct1 { get; set; } = 15;
+
+    /// <summary>普通撤离带出容量——第二幕。Host-authoritative。</summary>
+    public int ExtractionPointCapacityAct2 { get; set; } = 25;
+
+    /// <summary>普通撤离带出容量——第三幕及之后。Host-authoritative。</summary>
+    public int ExtractionPointCapacityAct3 { get; set; } = 35;
+
+    /// <summary>金币撤离基础费用（第一幕）。此后每幕复利 +ExtractionPointGoldFeeRate。Host-authoritative。</summary>
+    public int ExtractionPointGoldFeeAct1 { get; set; } = 100;
+
+    /// <summary>金币撤离费用每幕复利增幅（如 0.20 = 100→120→144）。Host-authoritative。</summary>
+    public double ExtractionPointGoldFeeRate { get; set; } = 0.20;
+
+    /// <summary>每幕出现撤离点事件的基础概率（0–1）。Host-authoritative——所有机器用同一概率保证放置 roll 一致。</summary>
+    public double ExtractionPointActChance { get; set; } = 0.30;
+
     public void ResetToDefaults()
     {
         MaxCarryCards = 10;
@@ -160,5 +178,11 @@ public sealed class ExtractionSettings
         LootAnimationAncientDuration = 5;
         LootAnimationOtherDuration = 2;
         LootAnimationSkipKey = "Space";
+        ExtractionPointCapacityAct1 = 15;
+        ExtractionPointCapacityAct2 = 25;
+        ExtractionPointCapacityAct3 = 35;
+        ExtractionPointGoldFeeAct1 = 100;
+        ExtractionPointGoldFeeRate = 0.20;
+        ExtractionPointActChance = 0.30;
     }
 }

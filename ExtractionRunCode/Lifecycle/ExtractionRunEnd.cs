@@ -59,14 +59,26 @@ public static class ExtractionRunEnd
             }
 
             bool success = evt.IsVictory;
-            var result = new ExtractionSettlementResult { Success = success };
+            var result = new ExtractionSettlementResult();
 
             if (success)
             {
+                result.Kind = ExtractionSettlementKind.Victory;
+                result.Success = true;
                 SettleSuccess(result, me);
+            }
+            else if (ExtractionPointFlow.IsExtractionChosen)
+            {
+                // The party extracted at the 撤离点: the run ended as a defeat (the forced kill), but the recorded
+                // selection IS deposited. This must be checked before the plain-defeat branch.
+                // 撤离点撤离：跑局以失败结束（强制击杀），但记录的选择正常入仓。必须排在普通失败分支之前。
+                result.Kind = ExtractionSettlementKind.ExtractionPoint;
+                result.Success = true;
+                SettleExtractionPoint(result, me);
             }
             else
             {
+                result.Kind = ExtractionSettlementKind.Defeat;
                 SettleFailure(result, me);
             }
 
@@ -83,119 +95,19 @@ public static class ExtractionRunEnd
         CarryConfig carried = ExtractionRunData.Carry.Get(me);
         WarehouseStore.BackfillCarryDurability(carried);
         bool durability = WarehouseStore.IsDurabilityEnabled;
-
-        // Per-id carried durability (order preserved): the deposit matches the first carriedCount deck copies of each
-        // id against these values, decrementing each; the rest of the deck is new at full durability. 各 id 的携带耐久
-        // 队列（保序）：结算把每 id 前 carriedCount 份牌组副本对齐这些值逐个递减，其余副本按满耐久新货。
-        var carriedCardDur = new Dictionary<ModelId, List<int>>();
-        foreach (WarehouseCard wc in carried.Cards)
-        {
-            if (wc.Card.Id is ModelId cardId)
-            {
-                if (!carriedCardDur.TryGetValue(cardId, out List<int>? durs))
-                {
-                    carriedCardDur[cardId] = durs = new List<int>();
-                }
-
-                durs.Add(wc.Durability);
-            }
-        }
-
-        var carriedRelicDur = new Dictionary<ModelId, List<int>>();
-        foreach (WarehouseRelic wr in carried.Relics)
-        {
-            if (wr.Relic.Id is ModelId relicId)
-            {
-                if (!carriedRelicDur.TryGetValue(relicId, out List<int>? durs))
-                {
-                    carriedRelicDur[relicId] = durs = new List<int>();
-                }
-
-                durs.Add(wr.Durability);
-            }
-        }
+        (Dictionary<ModelId, List<int>> carriedCardDur, Dictionary<ModelId, List<int>> carriedRelicDur) =
+            BuildCarriedDurability(carried);
 
         var cards = new List<WarehouseCard>();
         var brokenCards = new List<WarehouseCard>();
-        foreach (CardModel c in me.Deck.Cards)
-        {
-            if (CloneMarker.ShouldExclude(c))
-            {
-                continue;
-            }
-
-            SerializableCard sc;
-            try
-            {
-                sc = c.ToSerializable();
-            }
-            catch (Exception ex)
-            {
-                Entry.Logger.Warn($"ExtractionRunEnd: skipping un-serializable card {c.Id}: {ex.Message}");
-                continue;
-            }
-
-            int newDur = NextDurability(carriedCardDur, sc.Id, durability, WarehouseStore.MaxDurabilityForCard(sc.Id));
-            if (newDur <= 0)
-            {
-                brokenCards.Add(new WarehouseCard { Card = sc, Durability = 0 });
-            }
-            else
-            {
-                cards.Add(new WarehouseCard { Card = sc, Durability = newDur });
-            }
-        }
+        CollectCards(me.Deck.Cards, carriedCardDur, durability, cards, brokenCards);
 
         var relics = new List<WarehouseRelic>();
         var brokenRelics = new List<WarehouseRelic>();
-        foreach (RelicModel r in me.Relics)
-        {
-            SerializableRelic sr;
-            try
-            {
-                sr = r.ToSerializable();
-            }
-            catch (Exception ex)
-            {
-                Entry.Logger.Warn($"ExtractionRunEnd: skipping un-serializable relic {r.Id}: {ex.Message}");
-                continue;
-            }
-
-            if (IsExpiredRelic(r))
-            {
-                result.ExpiredRelics.Add(sr);
-                continue;
-            }
-
-            int newDur = NextDurability(carriedRelicDur, sr.Id, durability, WarehouseStore.MaxDurabilityForRelic());
-            if (newDur <= 0)
-            {
-                brokenRelics.Add(new WarehouseRelic { Relic = sr, Durability = 0 });
-            }
-            else
-            {
-                relics.Add(new WarehouseRelic { Relic = sr, Durability = newDur });
-            }
-        }
+        CollectRelics(me.Relics, carriedRelicDur, durability, result, relics, brokenRelics);
 
         var potions = new List<SerializablePotion>();
-        int slot = 0;
-        foreach (PotionModel? p in me.PotionSlots)
-        {
-            if (p != null)
-            {
-                try
-                {
-                    potions.Add(p.ToSerializable(slot));
-                }
-                catch (Exception ex)
-                {
-                    Entry.Logger.Warn($"ExtractionRunEnd: skipping un-serializable potion {p.Id}: {ex.Message}");
-                }
-            }
-
-            slot++;
-        }
+        CollectPotions(me, potions);
 
         int gold = me.Gold;
 
@@ -217,6 +129,232 @@ public static class ExtractionRunEnd
                           $"dropped {result.ExpiredRelics.Count} spent relic(s).");
         RitsuToastService.ShowInfo(ExtractionLocalization.DepositSuccessText());
     }
+
+    /// <summary>
+    /// Third-state settlement for a 撤离点 extraction. The run ended as a defeat (forced kill), but the recorded
+    /// selection IS deposited: 普通撤离 deposits the selected card/relic copies (per-id counts) + all potions + all gold;
+    /// 金币撤离 deposits EVERYTHING minus the gold fee. Durability is matched like a victory (carried copies come back at
+    /// carried−1, carried-1 copies break), but there is NO clear reward — no starter deck/relic grant, no victory epoch.
+    /// 撤离点撤离的第三态结算：跑局以失败结束，但记录的选择正常入仓——普通撤离入仓选中的牌/遗物副本（按 id 份数）+全部药水+全部
+    /// 金币；金币撤离全带（扣除金币费）。耐久按胜利匹配（携带副本带回 携带−1，1 耐久战损），但不发清关奖励。
+    /// </summary>
+    private static void SettleExtractionPoint(ExtractionSettlementResult result, Player me)
+    {
+        ExtractionPointSelection? selection = ExtractionPointFlow.Selection;
+        if (selection == null)
+        {
+            // IsExtractionChosen without a recorded selection (stale flag) — fall back to the plain-defeat report.
+            // IsExtractionChosen 却无记录选择（陈旧标记）——回退普通失败报告。
+            SettleFailure(result, me);
+            return;
+        }
+
+        CarryConfig carried = ExtractionRunData.Carry.Get(me);
+        WarehouseStore.BackfillCarryDurability(carried);
+        bool durability = WarehouseStore.IsDurabilityEnabled;
+        (Dictionary<ModelId, List<int>> carriedCardDur, Dictionary<ModelId, List<int>> carriedRelicDur) =
+            BuildCarriedDurability(carried);
+
+        bool goldKind = selection.Kind == ExtractionPointKind.Gold;
+        IEnumerable<CardModel> cardSource = goldKind ? me.Deck.Cards : SelectedCardCopies(me.Deck.Cards, selection.Cards);
+        IEnumerable<RelicModel> relicSource = goldKind ? me.Relics : SelectedRelicCopies(me.Relics, selection.Relics);
+
+        var cards = new List<WarehouseCard>();
+        var brokenCards = new List<WarehouseCard>();
+        CollectCards(cardSource, carriedCardDur, durability, cards, brokenCards);
+
+        var relics = new List<WarehouseRelic>();
+        var brokenRelics = new List<WarehouseRelic>();
+        CollectRelics(relicSource, carriedRelicDur, durability, result, relics, brokenRelics);
+
+        var potions = new List<SerializablePotion>();
+        CollectPotions(me, potions);
+
+        // 金币撤离 deducts the fee from the deposited gold; 普通撤离 deposits all gold.
+        int gold = Math.Max(0, me.Gold - (goldKind ? selection.GoldFee : 0));
+
+        result.Cards.AddRange(cards);
+        result.Relics.AddRange(relics);
+        result.BrokenCards.AddRange(brokenCards);
+        result.BrokenRelics.AddRange(brokenRelics);
+        result.Potions.AddRange(potions);
+        result.Gold = gold;
+
+        WarehouseStore.Deposit(cards, relics, potions, gold);
+        Entry.Logger.Info($"ExtractionRun: extraction-point extract — {cards.Count} cards, {relics.Count} relics, " +
+                          $"{potions.Count} potions, {gold} gold; " +
+                          $"broke {brokenCards.Count} card(s) and {brokenRelics.Count} relic(s); " +
+                          $"dropped {result.ExpiredRelics.Count} spent relic(s).");
+        RitsuToastService.ShowInfo(ExtractionLocalization.DepositSuccessText());
+    }
+
+    /// <summary>Builds the per-id carried-durability queues (order preserved) used by the capped matching.
+    /// 构建按 id 封顶匹配用的携带耐久队列（保序）。</summary>
+    private static (Dictionary<ModelId, List<int>> Cards, Dictionary<ModelId, List<int>> Relics) BuildCarriedDurability(
+        CarryConfig carried)
+    {
+        var cards = new Dictionary<ModelId, List<int>>();
+        foreach (WarehouseCard wc in carried.Cards)
+        {
+            if (wc.Card.Id is ModelId cardId)
+            {
+                if (!cards.TryGetValue(cardId, out List<int>? durs))
+                {
+                    cards[cardId] = durs = new List<int>();
+                }
+
+                durs.Add(wc.Durability);
+            }
+        }
+
+        var relics = new Dictionary<ModelId, List<int>>();
+        foreach (WarehouseRelic wr in carried.Relics)
+        {
+            if (wr.Relic.Id is ModelId relicId)
+            {
+                if (!relics.TryGetValue(relicId, out List<int>? durs))
+                {
+                    relics[relicId] = durs = new List<int>();
+                }
+
+                durs.Add(wr.Durability);
+            }
+        }
+
+        return (cards, relics);
+    }
+
+    private static void CollectCards(IEnumerable<CardModel> source, Dictionary<ModelId, List<int>> carriedCardDur,
+        bool durability, List<WarehouseCard> cards, List<WarehouseCard> broken)
+    {
+        foreach (CardModel c in source)
+        {
+            if (CloneMarker.ShouldExclude(c))
+            {
+                continue;
+            }
+
+            SerializableCard sc;
+            try
+            {
+                sc = c.ToSerializable();
+            }
+            catch (Exception ex)
+            {
+                Entry.Logger.Warn($"ExtractionRunEnd: skipping un-serializable card {c.Id}: {ex.Message}");
+                continue;
+            }
+
+            int newDur = NextDurability(carriedCardDur, sc.Id, durability, WarehouseStore.MaxDurabilityForCard(sc.Id));
+            if (newDur <= 0)
+            {
+                broken.Add(new WarehouseCard { Card = sc, Durability = 0 });
+            }
+            else
+            {
+                cards.Add(new WarehouseCard { Card = sc, Durability = newDur });
+            }
+        }
+    }
+
+    private static void CollectRelics(IEnumerable<RelicModel> source, Dictionary<ModelId, List<int>> carriedRelicDur,
+        bool durability, ExtractionSettlementResult result, List<WarehouseRelic> relics, List<WarehouseRelic> broken)
+    {
+        foreach (RelicModel r in source)
+        {
+            SerializableRelic sr;
+            try
+            {
+                sr = r.ToSerializable();
+            }
+            catch (Exception ex)
+            {
+                Entry.Logger.Warn($"ExtractionRunEnd: skipping un-serializable relic {r.Id}: {ex.Message}");
+                continue;
+            }
+
+            if (IsExpiredRelic(r))
+            {
+                result.ExpiredRelics.Add(sr);
+                continue;
+            }
+
+            int newDur = NextDurability(carriedRelicDur, sr.Id, durability, WarehouseStore.MaxDurabilityForRelic());
+            if (newDur <= 0)
+            {
+                broken.Add(new WarehouseRelic { Relic = sr, Durability = 0 });
+            }
+            else
+            {
+                relics.Add(new WarehouseRelic { Relic = sr, Durability = newDur });
+            }
+        }
+    }
+
+    private static void CollectPotions(Player me, List<SerializablePotion> potions)
+    {
+        int slot = 0;
+        foreach (PotionModel? p in me.PotionSlots)
+        {
+            if (p != null)
+            {
+                try
+                {
+                    potions.Add(p.ToSerializable(slot));
+                }
+                catch (Exception ex)
+                {
+                    Entry.Logger.Warn($"ExtractionRunEnd: skipping un-serializable potion {p.Id}: {ex.Message}");
+                }
+            }
+
+            slot++;
+        }
+    }
+
+    /// <summary>
+    /// Yields the first <paramref name="counts"/>[id] non-clone deck copies of each selected id — matching the panel's
+    /// availability (which also excluded clones), so a selection count always resolves to that many real copies.
+    /// 按 id 份数产出牌组副本，跳过运行级克隆（与面板可用数口径一致），保证选中份数总能解析到足量真实副本。
+    /// </summary>
+    private static IEnumerable<CardModel> SelectedCardCopies(IEnumerable<CardModel> source, Dictionary<ModelId, int> counts)
+    {
+        Dictionary<ModelId, int> remaining = new(counts);
+        foreach (CardModel c in source)
+        {
+            if (CloneMarker.ShouldExclude(c))
+            {
+                continue;
+            }
+
+            if (c.Id is ModelId id && remaining.TryGetValue(id, out int n) && n > 0)
+            {
+                remaining[id] = n - 1;
+                yield return c;
+            }
+        }
+    }
+
+    /// <summary>Same per-id count resolution for relics, skipping expired copies (the panel excluded them too).
+    /// 遗物按 id 份数解析，跳过失效副本（面板同样排除了它们）。</summary>
+    private static IEnumerable<RelicModel> SelectedRelicCopies(IEnumerable<RelicModel> source, Dictionary<ModelId, int> counts)
+    {
+        Dictionary<ModelId, int> remaining = new(counts);
+        foreach (RelicModel r in source)
+        {
+            if (IsExpiredRelic(r))
+            {
+                continue;
+            }
+
+            if (r.Id is ModelId id && remaining.TryGetValue(id, out int n) && n > 0)
+            {
+                remaining[id] = n - 1;
+                yield return r;
+            }
+        }
+    }
+
 
     /// <summary>
     /// The next durability for one deposited copy: if it matches a carried copy (id matched, capped at the carried
@@ -261,7 +399,7 @@ public static class ExtractionRunEnd
     /// 失效判定：次数用尽的有限次遗物（IsUsedUp），或融化的蜡质遗物（IsMelted）。判定抛异常按有效处理——绝不因判断失败丢掉有效遗物。
     /// 在耐久之前判断：失效的携带遗物按失效丢弃，不递减、也不进战损。
     /// </summary>
-    private static bool IsExpiredRelic(RelicModel r)
+    internal static bool IsExpiredRelic(RelicModel r)
     {
         try
         {

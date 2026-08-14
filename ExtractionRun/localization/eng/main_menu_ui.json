@@ -110,6 +110,18 @@
   "EXTRACTION_RUN.settlement.gold": "Gold {0}",
   "EXTRACTION_RUN.settlement.back": "Back",
   "EXTRACTION_RUN.settlement.empty": "None",
+  "EXTRACTION_RUN.settlement.extractionPoint.title": "Extraction Point",
+  "EXTRACTION_RUN.settlement.extractionPoint.lede": "You carried out the following from the extraction point:",
+
+  "EXTRACTION_RUN.extractionPoint.panel.title": "Extraction Point · Carry Out",
+  "EXTRACTION_RUN.extractionPoint.panel.cards": "Carried-out cards",
+  "EXTRACTION_RUN.extractionPoint.panel.relics": "Carried-out relics",
+  "EXTRACTION_RUN.extractionPoint.panel.capacity": "Carry out {0}/{1}",
+  "EXTRACTION_RUN.extractionPoint.panel.potionsAll": "Potions ({0}) are carried out in full",
+  "EXTRACTION_RUN.extractionPoint.panel.goldAll": "Gold ({0}) is carried out in full",
+  "EXTRACTION_RUN.extractionPoint.panel.empty.header": "Extract",
+  "EXTRACTION_RUN.extractionPoint.panel.empty.body": "You haven't selected any cards or relics — only potions and gold will be carried out. Extract anyway?",
+  "EXTRACTION_RUN.extractionPoint.panel.confirm": "Extract",
 
   "EXTRACTION_RUN.pool.ironclad": "Ironclad",
   "EXTRACTION_RUN.pool.silent": "Silent",

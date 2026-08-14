@@ -33,6 +33,8 @@ On first use, the warehouse is seeded with all Basic and Common cards, all Start
 - **Hub shop**: the "Shop" button at the bottom-right of the warehouse hub opens a two-tab shop (Buy / Sell). Stock re-rolls once per real calendar day, or on demand for a fee — see the Shop section below.
 - **Extraction report**: an "Extraction Report" button on the game-over screen shows exactly what was deposited or lost.
 - **Run seed**: set a custom run seed in the hub's footer before starting — the input is canonicalized live (uppercase, O→0, I→1) with a clear button; blank = random, matching the base game's custom-run field. The seed is a session-only, host-owned run parameter, never persisted with the carry; in MP the whole party follows the host's seed.
+- **Extraction point event**: a Tarkov-style escape node exclusive to Search-Loot-Extract runs — each act, a `?` map point may be replaced by a special-icon extraction node; entering it lets the party vote on whether to extract early (counts as a defeat, but the selected loot is still deposited). At most one appears per run; routing around it keeps the chance for the next act. See the Extraction Point Event section below.
+- **Loot search animation**: optional (default off) search-and-reveal animation for extraction runs — when card rewards or treasure chests open, every item is covered by a gray shroud, a magnifier sweeps each item and holds for a rarity-based duration, then a hard cut reveals it; press the skip key to reveal everything at once, or click an item being searched to reveal just it.
 - **Singleplayer & multiplayer**: both work; in MP, each player's loadout is settled independently per their own settings.
 - **Settings page**: sliders for max carried cards (0–20) and max carried relics (0–6), plus a one-click reset.
 
@@ -44,6 +46,20 @@ The "Shop" button at the bottom-right of the warehouse hub opens the shop (ESC o
 - **Sell**: shows the available "warehouse − carry" items with per-copy multi-select (left-click picks one copy, right-click removes one, Shift selects/deselects the whole group), plus search and multi-select filters (source pool, rarity, type, cost, durability). Sell value = the deterministic vanilla base price × the sell-ratio setting (default 50%) × a durability factor (durability / rarity max, floored, minimum 1 gold; potions and no-durability mode factor 1) — the more worn a copy, the less it's worth, and the most worn copies are sold first.
 
 The shop and the hub are mutually exclusive: opening the shop hides the hub, closing it restores and refreshes the hub so gold and stock always stay consistent.
+
+## Extraction Point Event
+
+An escape node exclusive to Search-Loot-Extract runs: each act, a roll decides whether this act places one (default 30%), and if so, one of the act's `?` points is replaced by the special-icon extraction node. **At most one appears per run** — entering the node spends this run's only chance; routing around it keeps the chance, and the next act rolls again.
+
+The extraction point is a **shared event**: the party votes on one of three options (majority wins, RNG breaks ties) and the winning option executes for everyone:
+
+- **Normal extract**: opens a selection panel — pick which cards and relics to carry out against this act's **capacity** (cards and relics share the pool by rarity weight), with all potions and gold carried free. Capacity scales with the act: 15 in act 1 / 25 in act 2 / 35 in act 3+.
+- **Gold extract**: pay a gold fee to carry out **everything**, ignoring the capacity limit. The fee starts at 100 in act 1 and compounds +20% per act (100 → 120 → 144). Players who can't afford it can't vote for it; if it still wins the vote, those players degrade to a normal extract instead.
+- **Pass**: nobody extracts, the event ends and the run continues — but this run's extraction-point chance is spent.
+
+Choosing normal or gold extract and confirming together ends the run as a **defeat**, yet the selected loot is still deposited: durability is deducted as on a victory, and **no clear reward is granted**. The extraction report on the game-over screen shows the carried-out items under an "Extraction Point" header.
+
+> The extraction point's numbers are **host-authoritative** settings: in MP, clients enforce the host's values (see Settings).
 
 ## Settings
 
@@ -57,9 +73,15 @@ The shop and the hub are mutually exclusive: opening the shop hides the hub, clo
 - **Durability caps**: the max durability granted to newly deposited items (new deposits only — existing copies are never retroactively changed), each a 1–20 slider — starter 5 / common 4 / uncommon 3 / rare 2 / ancient 1 / other 1 (event, token, status, curse, quest and mod cards) / relic 3.
 - **Shop buy multiplier**: buy price = the day's frozen price × this, a ×1.0–×5.0 slider, default ×2.0.
 - **Shop sell ratio**: sell value = the vanilla base price × this (before the durability factor), a 10%–100% slider, default 50%.
+- **Extraction point capacity**: the normal-extract carry capacity per act — act 1 / act 2 / act 3+ (5–99 sliders, defaults 15 / 25 / 35).
+- **Extraction point gold fee**: the gold-extract base fee (act 1, 0–999, default 100) and its per-act compounding rate (0%–100%, default 20%).
+- **Extraction point chance**: the per-act probability that an extraction point is placed (0%–100%, default 30%).
+- **Loot search animation**: master toggle, default off. When on, extraction runs play the search-and-reveal animation on card rewards and treasure chests.
+- **Search duration**: how many seconds each rarity is searched (1–20 sliders) — starter/common 1, uncommon 2, rare 4, ancient 5, other 2.
+- **Skip animation key**: during the animation, press this key to reveal every remaining item instantly (default Space, rebindable).
 - **Reset to defaults**: restores every setting.
 
-Toggling durability requires a confirmation dialog and is blocked while a run or a character-select lobby is active (the carry is already staged and can't be retracted). Settings are stored at global scope, shared across all saves.
+Toggling durability requires a confirmation dialog and is blocked while a run or a character-select lobby is active (the carry is already staged and can't be retracted). The extraction point values are **host-authoritative** and likewise locked while a run/lobby is active; the loot animation is purely cosmetic and can be toggled anytime. Settings are stored at global scope, shared across all saves.
 
 ## Compatibility
 
