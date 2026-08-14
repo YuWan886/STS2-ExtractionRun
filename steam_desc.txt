@@ -1,0 +1,180 @@
+[h1]搜打撤[/h1]
+进塔前从仓库自选装备带走；通关了战利品全带回家；倒路上则装备全丢。
+
+[hr][/hr]
+[h2]玩法[/h2]
+每个存档有独立持久[b]仓库[/b]。开跑前在「搜打撤」仓库界面：
+[olist]
+[*]挑选卡牌、遗物、药水、金币组成[b]携带装备[/b]——卡牌和遗物共用[b]背包容量[/b]（默认 15 格）。
+[*]开始游戏，携带的牌组替换初始牌组，物品从仓库[b]扣除[/b]。
+[*][b]通关 = 撤离成功[/b]：最终牌组、遗物、药水、金币全存入仓库。
+[*][b]死亡或放弃 = 撤离失败[/b]：所有携带物损失。
+[/olist]
+首次启用仓库会白送全部初始/普通卡牌、初始/普通遗物和 1000 金币。
+存入仓库的物品会[b]还原为基础状态[/b]，只存普通卡牌。
+
+[h2]特性[/h2]
+[list]
+[*][b]持久仓库[/b]：跨局累计，金币上限 9999999。
+[*][b]携带系统[/b]：卡牌和遗物共用背包容量（默认 15 格）。
+[*][b]背包容量[/b]：卡牌按稀有度占格（基础/普通 1、罕见 2、稀有 3、先古 4、其他 2），遗物一律 2 格。顶部显示「背包 X/15」，超重时自动放下最重物品，战备码导入也按剩余容量限制。
+[*][b]搜打撤循环[/b]：赢了全拿，输了全丢。
+[*][b]耐久系统[/b]：每张卡/遗物有耐久。每次撤离成功，带进局的每件耐久 -1，归零即损坏不入库。死亡/放弃直接全损（不扣耐久）。瓦片右下角显示耐久（琥珀色「耐久 n」），归零显示红色「耗尽」；同种物品不同耐久的副本默认分开展示。可整体关闭。
+[*][b]撤离点事件[/b]：地图上会随机出现一个特殊的撤离节点，抵达后可提前撤离——普通撤离按容量限额带出（第一幕 15、第二幕 25、第三幕起 35，药水与金币免费），金币撤离付费可全部带走（费用随幕数递增，付不起降级为普通撤离），路过则继续跑局。从撤离点撤离按「失败」结算（无通关奖励），带出物品仍按耐久扣减后入库。
+[*][b]通关奖励[/b]：每通关一次，发放该角色整套初始牌组和初始遗物。
+[*][b]仓库界面[/b]：卡牌/遗物/药水三页，每页有搜索和多选过滤（来源、稀有度、类型、费用），虚拟化网格流畅滚动。
+[*][b]商店系统[/b]：仓库右下角「商店」，分购买/出售两页，库存每日自动刷新、可花金币手动刷新。
+[*][b]撤离结算[/b]：游戏结束新增「查看撤离结算」，展示存入或损失的全部物品；从撤离点提前撤离时单独显示「从撤离点撤离」。
+[*][b]地图种子[/b]：仓库大厅底部可自定义种子（大写、O→0、I→1），留空则随机。仅本次会话有效，联机时全队沿用主机种子。
+[*][b]单人 & 联机[/b]：联机中每位玩家各自结算自己的装备。
+[*][b]搜刮动画[/b]：卡牌奖励和宝箱奖励会先被灰色遮盖，放大镜绕物品转动搜刮后揭示，营造搜刮手感（默认关闭，可在设置调整各稀有度时长与跳过键）。
+[*][b]设置页[/b]：背包容量、耐久、撤离点、搜刮动画等各项滑条/开关/按键，以及一键重置。
+[/list]
+
+[h2]商店[/h2]
+仓库右下角「商店」打开，右上角显示当前金币。两个标签：
+[list]
+[*][b]购买[/b]：卡牌/遗物/药水三个分区。库存每日首次打开时刷新一次；价格按基准价浮动后冻结当天。买入价 = 冻结价 × 买入倍率（默认 ×2.0），买到的东西满耐久入库。已售空位置保留空缺直到下次刷新。可点「刷新商店」付费重刷（50 → +50 → 封顶 250，每日重置）。
+[*][b]出售[/b]：展示「仓库 − 携带」的可出售物品，多选（左键选、右键减、Shift 全选），支持搜索和过滤（来源、稀有度、类型、费用、耐久度）。售价 = 基准价 × 卖出比例（默认 50%）× 耐久系数（耐久/上限向下取整，最低 1 金）——磨损越重越不值钱。
+[/list]
+
+[h2]设置[/h2]
+[list]
+[*][b]背包容量[/b]：总开关，默认开。开则按共享背包格数限制携带，关则回退到数量上限。切换需确认，跑局/大厅中禁止切换。
+[*][b]背包格数[/b]：共享总格数，滑条 1–30，默认 15。
+[*][b]占格权重[/b]：各稀有度卡牌和遗物占格数（滑条最小值 1）——基础/普通 1、罕见 2、稀有 3、先古 4、其他 2，遗物 2。
+[*][b]最大携带牌数[/b]：0–20，默认 10（容量关闭时的备选）。
+[*][b]最大携带遗物数[/b]：0–6，默认 3（容量关闭时的备选）。
+[*][b]悬停提示[/b]：瓦片悬停是否显示原版提示框（默认开）。
+[*][b]耐久系统[/b]：总开关，默认开。关闭后切换为无耐久仓库（不递减、不显示）；重新开启时回到冻结的耐久仓库，无耐久进度作废。
+[*][b]耐久上限[/b]：新入库物品的耐久上限（不影响已有），滑条 1–20——基础 5 / 普通 4 / 罕见 3 / 稀有 2 / 先古 1 / 其他 1 / 遗物 3。
+[*][b]耐久分开展示[/b]：同种卡牌/遗物不同耐久的副本各占一格展示（默认开）；关闭则合并为一块按最低耐久显示。耐久关闭时隐藏。
+[*][b]撤离点容量[/b]：普通撤离各幕容量上限（滑条 5–99）——第一幕 15 / 第二幕 25 / 第三幕起 35。
+[*][b]撤离点费用[/b]：金币撤离的基础费用（滑条 0–999，默认 100）与每幕递增比例（默认 +20%）。
+[*][b]撤离点出现率[/b]：每幕放置撤离节点的概率，默认 30%（联机由主机决定并同步）。
+[*][b]搜刮动画[/b]：总开关，默认关。开启后卡牌/宝箱奖励先被遮盖，放大镜搜刮后揭示。
+[*][b]搜刮时长[/b]：各稀有度的搜刮时长（滑条 1–20）——基础/普通 1 秒、罕见 2 秒、稀有 4 秒、先古 5 秒、其他 2 秒。
+[*][b]搜刮跳过键[/b]：一键跳过剩余搜刮动画的按键，默认空格。
+[*][b]商店买入倍率[/b]：滑条 ×1.0–×5.0，默认 ×2.0。
+[*][b]商店卖出比例[/b]：滑条 10%–100%，默认 50%。
+[*][b]重置默认值[/b]：一键恢复所有设置。
+[/list]
+耐久、背包容量开关切换需确认，跑局/大厅中禁止；撤离点设置同样在跑局/大厅中锁定（主机决定、联机同步）。搜刮动画纯展示，随时可开关。设置保存于全局，所有存档共享。
+
+[h2]兼容性[/h2]
+[list]
+[*][b]海克斯符文 mod[/b]：首次发放初始物品时[b]不会[/b]发放该 mod 的遗物。
+[*][b]联机大厅 mod（STS2-Game-Lobby）[/b]：大厅建房表单新增「搜打撤」房间类型，房主和客机都需先配置携带，开跑后走完整搜打撤链路。未安装该 mod 无影响。
+[/list]
+
+[h2]调试指令[/h2]
+内置控制台指令（仅本机，不受设置影响）：
+[code]
+extraction reset                                           # 重置仓库（需确认）
+extraction add <card|relic|potion|gold> <id|数量> [count]   # 向仓库添加
+extraction remove <card|relic|potion|gold> <id|数量> [count] # 从仓库移除
+[/code]
+[list]
+[*][b]reset[/b]：清空并重发初始物品，需确认；跑局/大厅中不可用。
+[*][b]add[/b]：按 ID 添加（如 STRIKE，支持 Tab 补全），gold 直接填数量。[count] 默认为 1，上限 999。
+[*][b]remove[/b]：按 ID 移除金币或物品，[count] 默认为 1，上限 999。跑局/大厅中不可用；会同步清理携带中的对应物品。
+[/list]
+
+[h2]反馈问题时请务必附上日志文件[/h2]
+[h2]反馈渠道[/h2]
+[list]
+[*][url=https://qm.qq.com/q/qwbVT9kxDU]交流群[/url]
+[*][url=https://docs.qq.com/smartsheet/DUUt2UHZvS2RpaUtC?tab=t7NLyo]Bug收集表[/url]
+[*][url=https://github.com/YuWan886/STS2-ExtractionRun]github[/url]
+[/list]
+
+
+
+
+[h1]Search-Loot-Extract[/h1]  
+Gear up from your warehouse before you climb. Win and take loot home; lose and it stays there forever.
+
+[hr][/hr]  
+[h2]How It Works[/h2]  
+Each save has its own persistent warehouse. Before a run, go to the Search-Loot-Extract hub:  
+[olist]  
+[*]Pick cards, relics, potions, and gold to form your loadout. Cards and relics share backpack space (default 15 slots).  
+[*]Start the run. Your carried deck replaces the starting one, and items are taken from the warehouse.  
+[*]Win = successful extraction: everything goes back to the warehouse.  
+[*]Die or abandon = failed extraction: you lose everything you carried.  
+[/olist]  
+First time? You get all Basic/Common cards, Starter/Common relics, and 1000 gold.  
+Deposited items are reset to base state (no upgrades, etc.) – only plain cards are stored.
+
+[h2]Features[/h2]  
+[list]  
+[*][b]Persistent warehouse[/b]: independent per save, gold cap 9,999,999.  
+[*][b]Carry system[/b]: freely choose your loadout; cards and relics share backpack (default 15 slots).  
+[*][b]Backpack capacity[/b]: cards cost slots by rarity (Basic/Common:1, Uncommon:2, Rare:3, Ancient:4, others:2), relics cost 2. Default 15 slots. The bar shows X/15. Over-capacity auto-drops heaviest items. You can adjust in Settings.  
+[*][b]Search-Loot-Extract loop[/b]: winner takes all, loser loses everything.  
+[*][b]Durability[/b]: each card/relic has durability. After each win, carried items lose 1 durability; at 0 they break and don't return. Die/abandon loses all (no durability loss). Tiles show durability (amber "Durability n" or red "Broken"); copies of the same item at different durability show as separate tiles by default. Can be disabled in Settings.  
+[*][b]Extraction point event[/b]: a special node may spawn on the map; reaching it lets you end the run early and carry out selected loot — normal extraction (capacity-limited: 15 in act 1, 25 in act 2, 35 from act 3; potions & gold free), gold extraction (pay a fee, growing each act, to take everything; can't afford it? fall back to normal extraction), or pass on and keep running. Extracting this way counts as a defeat (no clear reward), but carried items still lose durability and are deposited. In multiplayer the whole party votes.  
+[*][b]Clear reward[/b]: each win gives you that character's full starter deck and starter relics for future runs.  
+[*][b]Warehouse hub[/b]: three tabs (cards/relics/potions), search & filters, smooth virtual grid, preloaded art.  
+[*][b]Hub shop[/b]: Buy/Sell tabs. Stock refreshes once per real day or on demand for a fee.  
+[*][b]Extraction report[/b]: game-over screen shows what was deposited or lost; extracting early from an extraction point shows its own header.  
+[*][b]Loot search animation[/b]: card rewards and chest relics start veiled and are revealed by a sweeping magnifier (default off; per-rarity durations and a skip key in Settings).  
+[*][b]Run seed[/b]: set a custom seed (uppercase, O→0, I→1) or leave blank for random. Session‑only; multiplayer follows host.  
+[*][b]Singleplayer & multiplayer[/b]: both work; each player's loadout settles independently.  
+[*][b]Settings page[/b]: backpack capacity, durability, extraction point, and loot animation options, plus reset to defaults.  
+[/list]
+
+[h2]Shop[/h2]  
+The "Shop" button (bottom‑right of the hub) opens a two‑tab shop (Buy/Sell). Gold shown top‑right.  
+[list]  
+[*][b]Buy[/b]: three sections (cards/relics/potions). Stock refreshes daily on first open; prices frozen for the day. Buy price = frozen price × buy multiplier (default ×2.0). Items arrive at full durability. You can manually re‑roll for a fee (50 → +50 → cap 250, resets daily).  
+[*][b]Sell[/b]: shows available "warehouse − carry" items. Multi‑select per copy (left‑click picks, right‑click removes, Shift selects). Search & filters. Sell value = base price × sell ratio (default 50%) × durability factor (durability / rarity max, min 1 gold). Worn items sell for less.  
+[/list]
+
+[h2]Settings[/h2]  
+[list]  
+[*][b]Backpack capacity[/b]: master toggle (default on). On = shared slot pool; Off = per‑kind count caps. Toggle needs confirmation; blocked during runs/lobbies.  
+[*][b]Backpack slots[/b]: total slots, slider 1–30, default 15.  
+[*][b]Slot weights[/b]: slots per rarity and relic (min 1) – Basic/Common:1, Uncommon:2, Rare:3, Ancient:4, Other:2 (events, tokens, statuses, curses, quests, mods), Relic:2.  
+[*][b]Max carried cards[/b]: 0–20, default 10 (used when capacity off).  
+[*][b]Max carried relics[/b]: 0–6, default 3 (used when capacity off).  
+[*][b]Hover tooltips[/b]: show vanilla tooltip on hover (default on).  
+[*][b]Durability[/b]: master toggle (default on). Off = no‑durability copy (no decrements); re‑enabling returns to frozen durability warehouse, discarding no‑durability progress. Toggle needs confirmation; blocked during runs/lobbies.  
+[*][b]Durability caps[/b]: max durability for new deposits (sliders 1–20) – Starter:5, Common:4, Uncommon:3, Rare:2, Ancient:1, Other:1, Relic:3.  
+[*][b]Split by durability[/b]: copies of the same item at different durability show as separate tiles (default on); off merges them into one tile at the lowest durability. Hidden while durability is off.  
+[*][b]Extraction point capacity[/b]: slots you can carry out on a normal extraction per act (sliders 5–99) – 15 in act 1, 25 in act 2, 35 from act 3.  
+[*][b]Extraction point fee[/b]: base gold fee for gold extraction (slider 0–999, default 100) and the per-act compounding rate (default +20%).  
+[*][b]Extraction point chance[/b]: probability a node is placed per act, default 30% (host decides, synced to clients).  
+[*][b]Loot animation[/b]: master toggle (default off). When on, card/chest rewards start veiled and reveal on a magnifier sweep.  
+[*][b]Search durations[/b]: seconds per rarity (sliders 1–20) – Basic/Common 1s, Uncommon 2s, Rare 4s, Ancient 5s, Other 2s.  
+[*][b]Search skip key[/b]: instantly reveal all remaining items (default Space).  
+[*][b]Shop buy multiplier[/b]: slider ×1.0–×5.0, default ×2.0.  
+[*][b]Shop sell ratio[/b]: slider 10%–100%, default 50%.  
+[*][b]Reset to defaults[/b]: restores all settings.  
+[/list]  
+Settings are global and shared across all saves.
+
+[h2]Compatibility[/h2]  
+[list]  
+[*][b]Hextech Runes mod[/b]: first‑time warehouse seed does not grant that mod's relics.  
+[*][b]STS2‑Game‑Lobby[/b]: adds a Search‑Loot‑Extract room type; host and clients must configure carry first, then run full injection/consume/deposit loop. No compile‑time dependency; no effect if not installed.  
+[/list]
+
+[h2]Debug Commands[/h2]  
+In‑game console (local only):  
+[code]  
+extraction reset                                           # reset warehouse (confirmation)  
+extraction add <card|relic|potion|gold> <id|amount> [count] # add items/gold  
+extraction remove <card|relic|potion|gold> <id|amount> [count] # remove items/gold  
+[/code]  
+[list]  
+[*][b]reset[/b]: wipes and re‑grants starting items; confirmation; unavailable during runs/lobbies.  
+[*][b]add[/b]: add by ID (e.g. STRIKE, Tab completion), gold by amount. [count] defaults to 1 (max 999).  
+[*][b]remove[/b]: remove by ID or gold. [count] defaults to 1 (max 999). Unavailable during runs/lobbies; removes also from pending carry to avoid dupes.  
+[/list]
+
+[h2]When reporting issues, please attach your log file.[/h2]  
+[h2]Feedback[/h2]  
+[list]   
+[*][url=https://github.com/YuWan886/STS2-ExtractionRun]GitHub[/url]  
+[/list]
