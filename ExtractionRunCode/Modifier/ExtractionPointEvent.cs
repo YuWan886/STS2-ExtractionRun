@@ -118,9 +118,18 @@ public sealed class ExtractionPointEvent : EventModel
 
         // The shared-event option-task barrier only waits for this machine's copies — a remote player's human panel
         // input isn't tracked by it. Wait for every machine to confirm before ending the run, or machine A hits the
-        // game-over while teammate B is still picking. 共享事件屏障只等本机副本——远端玩家的真实操作它等不到。等全队确认
-        // 再结束，避免 A 机进结算而队友 B 还在挑牌。
-        await ExtractionPointFlow.WaitForAllConfirmed(me.RunState.Players);
+        // game-over while teammate B is still picking. Show the vanilla waiting overlay while we wait.
+        // 共享事件屏障只等本机副本——远端玩家的真实操作它等不到。等全队确认再结束，避免 A 机进结算而队友 B 还在挑牌。
+        // 等待期间显示原版等待覆盖层。
+        ExtractionPointWaitingOverlay? waiting = ExtractionPointWaitingOverlay.ShowIfWaiting(me.RunState.Players);
+        try
+        {
+            await ExtractionPointFlow.WaitForAllConfirmed(me.RunState.Players);
+        }
+        finally
+        {
+            waiting?.Close();
+        }
 
         await EndRunAsExtraction(me.RunState);
     }
