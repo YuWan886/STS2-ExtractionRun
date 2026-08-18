@@ -5,7 +5,7 @@ using MegaCrit.Sts2.Core.Runs;
 using ExtractionRun.Data;
 using ExtractionRun.Modifier;
 
-namespace ExtractionRun.Compatibility;
+namespace ExtractionRun.Patches;
 
 /// <summary>
 /// Engine F (DOUBLE_ENEMY) — HP arm. A postfix on <c>CombatState.CreateCreature</c> doubles every enemy's max HP and

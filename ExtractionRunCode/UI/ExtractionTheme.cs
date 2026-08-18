@@ -79,6 +79,7 @@ public static class ExtractionTheme
     public const string ButtonRow = "row";
     public const string ButtonTile = "tile";
     public const string ButtonTab = "tab";
+    public const string ButtonSegment = "segment";
 
     private static Theme? _theme;
     private static Font? _regular;
@@ -105,6 +106,10 @@ public static class ExtractionTheme
 
     /// <summary>Floating dark card with a hairline border and a soft shadow. 悬浮深色卡片。</summary>
     public static StyleBoxFlat CardBox() => Box(Card, radius: 12, border: Border, borderWidth: 1, shadowSize: 10);
+
+    /// <summary>Unified frame for the header page switcher. The child buttons supply the three equal segments.
+    /// 顶部页面切换器的统一外框，内部按钮负责三个等宽分段。</summary>
+    public static StyleBoxFlat PageSwitcherBox() => Box(Card, radius: 8, border: Border, borderWidth: 1);
 
     /// <summary>Pill-shaped gold chip (dark gold on the dark theme). 金币胶囊（深色主题）。</summary>
     public static StyleBoxFlat ChipBox()
@@ -212,6 +217,14 @@ public static class ExtractionTheme
         return Box(CardRaised, radius: 8, border: Primary, borderWidth: 2);
     }
 
+    /// <summary>Flat segment inside the shared page-switcher frame. 顶部共用长条中的扁平分段。</summary>
+    private static StyleBoxFlat SegmentButtonBox(bool hovered)
+    {
+        return Box(hovered ? RowHover : new Color(0f, 0f, 0f, 0f));
+    }
+
+    private static StyleBoxFlat SegmentButtonPressedBox() => Box(Primary);
+
     // ----- Item tiles (warehouse / carry card-form entries) -----
 
     /// <summary>Item tile surface: dark rounded card with a hairline border. 物品卡片表面。</summary>
@@ -265,6 +278,19 @@ public static class ExtractionTheme
 
     /// <summary>Selected (multi-select) item tile surface: primary border on the raised card. 选中瓦片表面（主题蓝描边）。</summary>
     public static StyleBoxFlat SelectedTileBox() => Box(CardRaised, radius: 10, border: Primary, borderWidth: 2, shadowSize: 3);
+
+    /// <summary>Challenge entry surface: raised card; a selected entry shows the primary border; a disabled entry
+    /// (STRIKE_ONLY un-carryable) dims into a muted card. 挑战条目表面：选中加主题蓝描边；禁用（打击牌不可带）降为暗色卡片。</summary>
+    public static StyleBoxFlat ChallengeEntryBox(bool selected, bool disabled = false)
+    {
+        if (disabled)
+        {
+            return Box(CardRaised, radius: 10, border: Border, borderWidth: 1, shadowSize: 2);
+        }
+
+        return Box(selected ? CardRaised : Card, radius: 10,
+            border: selected ? Primary : Border, borderWidth: 1, shadowSize: 2);
+    }
 
     /// <summary>Search input surface: dark card, primary border + slightly raised fill while focused. 搜索输入框表面。</summary>
     private static StyleBoxFlat LineEditBox(bool focused)
@@ -324,6 +350,8 @@ public static class ExtractionTheme
             TileBox(false), TileBox(true), TileBoxPressed(), FontSizeSmall);
         RegisterButtonVariation(theme, ButtonTab, Text,
             TabButtonBox(false), TabButtonBox(true), TabButtonPressedBox(), FontSizeBody);
+        RegisterButtonVariation(theme, ButtonSegment, Text,
+            SegmentButtonBox(false), SegmentButtonBox(true), SegmentButtonPressedBox(), FontSizeBody);
 
         // ----- Thin flat scrollbars -----
         foreach (string scrollType in new[] { "VScrollBar", "HScrollBar" })

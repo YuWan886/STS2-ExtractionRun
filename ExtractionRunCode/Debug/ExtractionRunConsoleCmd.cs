@@ -18,7 +18,7 @@ namespace ExtractionRun.Debug;
 /// </summary>
 public sealed class ExtractionRunConsoleCmd : AbstractConsoleCmd
 {
-    private static readonly string[] RootCommands = { "reset", "add", "remove" };
+    private static readonly string[] RootCommands = { "reset", "add", "remove", "refresh" };
     private static readonly string[] TypeCommands = { "card", "relic", "potion", "gold" };
 
     /// <summary>
@@ -31,9 +31,9 @@ public sealed class ExtractionRunConsoleCmd : AbstractConsoleCmd
     public override string CmdName => "extraction";
 
     public override string Args =>
-        "reset | add <card|relic|potion|gold> <id|amount> [count] | remove <card|relic|potion|gold> <id|amount> [count]";
+        "reset | refresh | add <card|relic|potion|gold> <id|amount> [count] | remove <card|relic|potion|gold> <id|amount> [count]";
 
-    public override string Description => "搜打撤仓库调试：重置仓库（需确认），或增删卡牌/遗物/药水/金币。";
+    public override string Description => "搜打撤仓库调试：重置仓库（需确认）、刷新每日挑战，或增删卡牌/遗物/药水/金币。";
 
     public override bool IsNetworked => false;
 
@@ -47,6 +47,7 @@ public sealed class ExtractionRunConsoleCmd : AbstractConsoleCmd
         return args[0].ToLowerInvariant() switch
         {
             "reset" => ProcessReset(),
+            "refresh" => ProcessRefresh(),
             "add" => ProcessAdd(args),
             "remove" => ProcessRemove(args),
             _ => Usage(),
@@ -116,6 +117,20 @@ public sealed class ExtractionRunConsoleCmd : AbstractConsoleCmd
         PendingCarryStore.Clear();
         WarehouseHubScreen.Current?.RefreshForExternalMutationAfterShrink();
         Entry.Logger.Info("ExtractionRunConsoleCmd: warehouse reset to starter items.");
+    }
+
+    // ----- refresh 刷新每日挑战 -----
+
+    private CmdResult ProcessRefresh()
+    {
+        ChallengeStore.RefreshDaily();
+
+        // A still-selected daily that fell out of the new pool is dropped from the draft, so a run never carries an
+        // id that isn't on offer (ComputeEffects would silently ignore it — confusing). 把被换出池子的已选每日从草稿移除，
+        // 开跑不会带一个不在池中的 id（ComputeEffects 会静默忽略它——令人困惑）。
+        WarehouseHubScreen.Current?.RemovePendingChallengesNotInDailyPool();
+        WarehouseHubScreen.Current?.RefreshForExternalMutation();
+        return new CmdResult(true, "已刷新每日挑战。");
     }
 
     // ----- add 添加 -----

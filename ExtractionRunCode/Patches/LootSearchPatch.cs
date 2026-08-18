@@ -4,8 +4,9 @@ using MegaCrit.Sts2.Core.Nodes.Cards.Holders;
 using MegaCrit.Sts2.Core.Nodes.Screens.CardSelection;
 using MegaCrit.Sts2.Core.Nodes.Screens.TreasureRoomRelic;
 using MegaCrit.Sts2.Core.Saves;
+using ExtractionRun.UI;
 
-namespace ExtractionRun.UI;
+namespace ExtractionRun.Patches;
 
 /// <summary>
 /// Hooks the 搜刮 loot-search reveal into the reward screens (card reward choice, treasure chest).

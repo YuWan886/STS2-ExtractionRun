@@ -19,7 +19,7 @@ Every save slot has its own persistent **warehouse**. Before a run, open the Sea
 
 On first use, the warehouse is seeded with all Basic and Common cards, all Starter and Common relics, and 1000 gold to get you started.
 
-> Items are **normalized to base state** when deposited (upgrades, enchantments, props stripped) — the warehouse only ever holds plain cards.
+> Items are **normalized to base state** when deposited (upgrades, enchantments, props stripped) — the warehouse only ever holds plain cards. **Run-level clones are not deposited**.
 
 ## Features
 
@@ -33,10 +33,11 @@ On first use, the warehouse is seeded with all Basic and Common cards, all Start
 - **Hub shop**: the "Shop" button at the bottom-right of the warehouse hub opens a two-tab shop (Buy / Sell). Stock re-rolls once per real calendar day, or on demand for a fee — see the Shop section below.
 - **Extraction report**: an "Extraction Report" button on the game-over screen shows exactly what was deposited or lost.
 - **Run seed**: set a custom run seed in the hub's footer before starting — the input is canonicalized live (uppercase, O→0, I→1) with a clear button; blank = random, matching the base game's custom-run field. The seed is a session-only, host-owned run parameter, never persisted with the carry; in MP the whole party follows the host's seed.
+- **Challenge system**: the hub adds a Challenge tab alongside Warehouse and Shop, offering two kinds: daily challenges (5 random slots per day, repeatable with rewards every clear) and permanent challenges (no rewards, clear-count tracked). Multiple challenges can stack. See the Challenge System section below.
 - **Extraction point event**: a Tarkov-style escape node exclusive to Search-Loot-Extract runs — each act, a `?` map point may be replaced by a special-icon extraction node; entering it lets the party vote on whether to extract early (counts as a defeat, but the selected loot is still deposited). At most one appears per run; routing around it keeps the chance for the next act. See the Extraction Point Event section below.
 - **Loot search animation**: optional (default off) search-and-reveal animation for extraction runs — when card rewards or treasure chests open, every item is covered by a gray shroud, a magnifier sweeps each item and holds for a rarity-based duration, then a hard cut reveals it; press the skip key to reveal everything at once, or click an item being searched to reveal just it.
 - **Singleplayer & multiplayer**: both work; in MP, each player's loadout is settled independently per their own settings.
-- **Settings page**: sliders for max carried cards (0–20) and max carried relics (0–6), plus a one-click reset.
+- **Settings page**: backpack capacity, durability, challenges, extraction point, loot animation sliders/toggles, plus a one-click reset.
 
 ## Shop
 
@@ -60,6 +61,16 @@ The extraction point is a **shared event**: the party votes on one of three opti
 Choosing normal or gold extract and confirming together ends the run as a **defeat**, yet the selected loot is still deposited: durability is deducted as on a victory, and **no clear reward is granted**. The extraction report on the game-over screen shows the carried-out items under an "Extraction Point" header.
 
 > The extraction point's numbers are **host-authoritative** settings: in MP, clients enforce the host's values (see Settings).
+
+## Challenge System
+
+The hub gains a Challenge tab (alongside Warehouse and Shop), offering two kinds of challenges:
+
+**Daily challenges**: 5 random challenge slots refreshed each local day, multi-select enabled. **Daily challenges are repeatable and grant rewards on every Boss-victory clear** — no completion flag.
+
+**Permanent challenges**: no rewards, clear count tracked (✓ mark). Stack with daily challenges. Two shipped: all monster rooms become elite, empty carry + starter config.
+
+In MP the host selects challenges; clients see the host's list on the forced carry modal. Selected challenges show at the bottom of the carry panel. Console command `extraction refresh` re-rolls the daily pool instantly.
 
 ## Settings
 
@@ -96,8 +107,10 @@ The in-game developer console provides these Search-Loot-Extract commands (local
 extraction reset                                         # reset the warehouse (confirmation dialog)
 extraction add <card|relic|potion|gold> <id|amount> [count]
 extraction remove <card|relic|potion|gold> <id|amount> [count]
+extraction refresh                                       # re-roll daily challenge pool
 ```
 
 - **`extraction reset`**: wipes the warehouse and re-grants the starting items. Shows a confirmation dialog first; **unavailable while a run is in progress or a character-select lobby is open**.
 - **`extraction add`**: adds items to the warehouse. `card` / `relic` / `potion` are addressed by model ID (SCREAMING_SNAKE, e.g. `STRIKE`, with Tab completion); `gold` takes an amount directly. `[count]` defaults to 1 and is capped at 999. Adds go through the normal deposit path, so items are normalized to base state.
 - **`extraction remove`**: removes items or gold from the warehouse. Same addressing; `[count]` defaults to 1 and is capped at 999. **Unavailable while a run is in progress or a character-select lobby is open**; removes also strip the matching items from any pending carry, preventing free-item dupes.
+- **`extraction refresh`**: instantly re-rolls the daily challenge pool (5 slots drawn from 6 challenges). Any still-selected daily that fell out of the new pool is removed from the current session.

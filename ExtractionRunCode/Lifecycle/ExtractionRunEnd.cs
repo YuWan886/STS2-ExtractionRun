@@ -1,5 +1,7 @@
 using MegaCrit.Sts2.Core.Context;
+using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Entities.Relics;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Saves.Runs;
@@ -58,6 +60,10 @@ public static class ExtractionRunEnd
                 return;
             }
 
+            ExtractionModifier? modifier = state.Modifiers.OfType<ExtractionModifier>().FirstOrDefault();
+            ChallengeEffects effects = modifier?.Effects ?? ChallengeEffects.None;
+            IReadOnlyList<string> challengeIds = modifier?.ActiveChallengeIds ?? Array.Empty<string>();
+
             bool success = evt.IsVictory;
             var result = new ExtractionSettlementResult();
 
@@ -65,7 +71,7 @@ public static class ExtractionRunEnd
             {
                 result.Kind = ExtractionSettlementKind.Victory;
                 result.Success = true;
-                SettleSuccess(result, me);
+                SettleSuccess(result, me, effects, challengeIds);
             }
             else if (ExtractionPointFlow.IsExtractionChosen)
             {
@@ -90,8 +96,10 @@ public static class ExtractionRunEnd
         }
     }
 
-    private static void SettleSuccess(ExtractionSettlementResult result, Player me)
+    private static void SettleSuccess(ExtractionSettlementResult result, Player me,
+        ChallengeEffects effects, IReadOnlyList<string> challengeIds)
     {
+        Entry.Logger.Info($"SettleSuccess: effects={effects}, challengeIds=[{string.Join(", ", challengeIds)}]");
         CarryConfig carried = ExtractionRunData.Carry.Get(me);
         WarehouseStore.BackfillCarryDurability(carried);
         bool durability = WarehouseStore.IsDurabilityEnabled;
@@ -100,16 +108,63 @@ public static class ExtractionRunEnd
 
         var cards = new List<WarehouseCard>();
         var brokenCards = new List<WarehouseCard>();
-        CollectCards(me.Deck.Cards, carriedCardDur, durability, cards, brokenCards);
+        var returnedCardCounts = new Dictionary<ModelId, int>();
+        CollectCards(me.Deck.Cards, carriedCardDur, durability, cards, brokenCards, returnedCardCounts);
 
         var relics = new List<WarehouseRelic>();
         var brokenRelics = new List<WarehouseRelic>();
-        CollectRelics(me.Relics, carriedRelicDur, durability, result, relics, brokenRelics);
+        var returnedRelicCounts = new Dictionary<ModelId, int>();
+        CollectRelics(me.Relics, carriedRelicDur, durability, result, relics, brokenRelics, returnedRelicCounts);
 
         var potions = new List<SerializablePotion>();
         CollectPotions(me, potions);
 
         int gold = me.Gold;
+
+        // HP_ONE reward: every healthy returned carried copy is duplicated at full durability (a broken one is not —
+        // 碎 = 真碎) and the deposited gold doubles. 翻倍奖励：每份健康带回的携带副本补一张满耐久副本（战损不补），金币翻倍。
+        Entry.Logger.Info($"HP_ONE doubling check: flag={effects.HasFlag(ChallengeEffects.HpOne)}, " +
+                          $"returnedCards={returnedCardCounts.Count}, returnedRelics={returnedRelicCounts.Count}");
+        if (effects.HasFlag(ChallengeEffects.HpOne))
+        {
+            foreach (KeyValuePair<ModelId, int> kvp in returnedCardCounts)
+            {
+                WarehouseCard? sample = cards.FirstOrDefault(c => c.Card.Id == kvp.Key);
+                if (sample == null)
+                {
+                    continue;
+                }
+
+                for (int i = 0; i < kvp.Value; i++)
+                {
+                    cards.Add(new WarehouseCard
+                    {
+                        Card = sample.Card,
+                        Durability = WarehouseStore.MaxDurabilityForCard(kvp.Key),
+                    });
+                }
+            }
+
+            foreach (KeyValuePair<ModelId, int> kvp in returnedRelicCounts)
+            {
+                WarehouseRelic? sample = relics.FirstOrDefault(r => r.Relic.Id == kvp.Key);
+                if (sample == null)
+                {
+                    continue;
+                }
+
+                for (int i = 0; i < kvp.Value; i++)
+                {
+                    relics.Add(new WarehouseRelic
+                    {
+                        Relic = sample.Relic,
+                        Durability = WarehouseStore.MaxDurabilityForRelic(),
+                    });
+                }
+            }
+
+            gold *= 2;
+        }
 
         result.Cards.AddRange(cards);
         result.Relics.AddRange(relics);
@@ -123,11 +178,53 @@ public static class ExtractionRunEnd
             WarehouseStore.GrantCharacterCompletionReward(me.Character);
         result.Cards.AddRange(rewardCards);
         result.Relics.AddRange(rewardRelics);
+
+        ApplyChallengeRewards(result, me, challengeIds);
         Entry.Logger.Info($"ExtractionRun: extracted {cards.Count} cards, {relics.Count} relics, " +
                           $"{potions.Count} potions, {gold} gold; " +
                           $"broke {brokenCards.Count} card(s) and {brokenRelics.Count} relic(s); " +
                           $"dropped {result.ExpiredRelics.Count} spent relic(s).");
         RitsuToastService.ShowInfo(ExtractionLocalization.DepositSuccessText());
+    }
+
+    /// <summary>
+    /// Victory-only challenge rewards: rarity grants (all-of-rarity, or N random), fixed-card grants (STRIKE_ONLY),
+    /// + clear-count updates (daily challenges remain re-selectable — their count is display-only). Never reached from
+    /// the extraction-point/defeat paths. 仅在胜利结算发放的挑战奖励：稀有度发放（各一张或随机 N 张）、固定卡发放
+    /// （STRIKE_ONLY）+ 通关次数更新（每日挑战可重复，次数仅供展示）。
+    /// 撤离点/失败路径到不了这里。
+    /// </summary>
+    private static void ApplyChallengeRewards(ExtractionSettlementResult result, Player me, IReadOnlyList<string> challengeIds)
+    {
+        foreach (string id in challengeIds)
+        {
+            ChallengeDef? def = ChallengeRegistry.Get(id);
+            if (def?.RewardCardIds is { Length: > 0 } fixedIds)
+            {
+                (List<WarehouseCard> cards, _) = WarehouseStore.GrantFixedCards(fixedIds, def.RewardCount);
+                result.Cards.AddRange(cards);
+            }
+            else if (def?.AllCardsReward == true)
+            {
+                (List<WarehouseCard> cards, _) = WarehouseStore.GrantAllCardsReward(me.Character);
+                result.Cards.AddRange(cards);
+            }
+            else if (def?.RewardRelicRarity is RelicRarity relicRarity)
+            {
+                (_, List<WarehouseRelic> relics) = WarehouseStore.GrantRelicRarityReward(me.Character, relicRarity, def.RewardCount);
+                result.Relics.AddRange(relics);
+            }
+            else if (def?.RewardRarity is CardRarity rarity)
+            {
+                (List<WarehouseCard> cards, _) = WarehouseStore.GrantRarityReward(me.Character, rarity, def.RewardCount);
+                result.Cards.AddRange(cards);
+            }
+        }
+
+        foreach (string id in challengeIds.Distinct())
+        {
+            ChallengeStore.MarkCleared(id);
+        }
     }
 
     /// <summary>
@@ -225,7 +322,8 @@ public static class ExtractionRunEnd
     }
 
     private static void CollectCards(IEnumerable<CardModel> source, Dictionary<ModelId, List<int>> carriedCardDur,
-        bool durability, List<WarehouseCard> cards, List<WarehouseCard> broken)
+        bool durability, List<WarehouseCard> cards, List<WarehouseCard> broken,
+        Dictionary<ModelId, int>? returnedCounts = null)
     {
         foreach (CardModel c in source)
         {
@@ -245,7 +343,7 @@ public static class ExtractionRunEnd
                 continue;
             }
 
-            int newDur = NextDurability(carriedCardDur, sc.Id, durability, WarehouseStore.MaxDurabilityForCard(sc.Id));
+            int newDur = NextDurability(carriedCardDur, sc.Id, durability, WarehouseStore.MaxDurabilityForCard(sc.Id), out bool matched);
             if (newDur <= 0)
             {
                 broken.Add(new WarehouseCard { Card = sc, Durability = 0 });
@@ -253,12 +351,17 @@ public static class ExtractionRunEnd
             else
             {
                 cards.Add(new WarehouseCard { Card = sc, Durability = newDur });
+                if (matched && returnedCounts != null && sc.Id is ModelId returnedId)
+                {
+                    returnedCounts[returnedId] = returnedCounts.GetValueOrDefault(returnedId) + 1;
+                }
             }
         }
     }
 
     private static void CollectRelics(IEnumerable<RelicModel> source, Dictionary<ModelId, List<int>> carriedRelicDur,
-        bool durability, ExtractionSettlementResult result, List<WarehouseRelic> relics, List<WarehouseRelic> broken)
+        bool durability, ExtractionSettlementResult result, List<WarehouseRelic> relics, List<WarehouseRelic> broken,
+        Dictionary<ModelId, int>? returnedCounts = null)
     {
         foreach (RelicModel r in source)
         {
@@ -279,7 +382,7 @@ public static class ExtractionRunEnd
                 continue;
             }
 
-            int newDur = NextDurability(carriedRelicDur, sr.Id, durability, WarehouseStore.MaxDurabilityForRelic());
+            int newDur = NextDurability(carriedRelicDur, sr.Id, durability, WarehouseStore.MaxDurabilityForRelic(), out bool matched);
             if (newDur <= 0)
             {
                 broken.Add(new WarehouseRelic { Relic = sr, Durability = 0 });
@@ -287,6 +390,10 @@ public static class ExtractionRunEnd
             else
             {
                 relics.Add(new WarehouseRelic { Relic = sr, Durability = newDur });
+                if (matched && returnedCounts != null && sr.Id is ModelId returnedId)
+                {
+                    returnedCounts[returnedId] = returnedCounts.GetValueOrDefault(returnedId) + 1;
+                }
             }
         }
     }
@@ -359,23 +466,29 @@ public static class ExtractionRunEnd
     /// <summary>
     /// The next durability for one deposited copy: if it matches a carried copy (id matched, capped at the carried
     /// count), the carried value minus one — a copy at 1 breaks (≤0). Otherwise the copy is new: full durability by
-    /// rarity when durability is ON, or full when OFF (the whole decrement is skipped). Matching is per-id and
-    /// order-preserving: the first carriedCount copies of an id consume the carried values, so a carried copy removed
-    /// mid-run and replaced by a same-id reward mis-decrements that reward by one (accepted edge of the capped scheme).
+    /// rarity when durability is ON, or full when OFF (the whole decrement is skipped). Matching itself is independent
+    /// of the durability flag — a copy whose id hits the carried cap is a "returned carried copy" (counted for the
+    /// HP_ONE doubling reward) even under OFF mode, where it simply returns at full instead of carried − 1.
+    /// Matching is per-id and order-preserving: the first carriedCount copies of an id consume the carried values, so a
+    /// carried copy removed mid-run and replaced by a same-id reward mis-decrements that reward by one (accepted edge
+    /// of the capped scheme).
     /// 单份入库副本的下一耐久：命中携带副本（按 id 封顶匹配）→ 携带值 − 1（1 耐久副本 → ≤0 战损）；否则为新货 → 满耐久
-    /// （耐久 ON 按稀有度，OFF 也满——OFF 整段不递减）。按 id 保序匹配：每 id 前 carriedCount 份消耗携带值，故携带牌中途被
-    /// 移除、又同名奖励补进时，会误把该奖励递减一次（封顶方案的已知边角）。
+    /// （耐久 ON 按稀有度，OFF 也满——OFF 整段不递减）。匹配与耐久开关无关——命中携带封顶的副本就是「带回的携带副本」（计入
+    /// 纸片人翻倍奖励），只是 OFF 模式下按满耐久带回而非 携带−1。按 id 保序匹配：每 id 前 carriedCount 份消耗携带值，故携带牌
+    /// 中途被移除、又同名奖励补进时，会误把该奖励递减一次（封顶方案的已知边角）。
     /// </summary>
     private static int NextDurability(Dictionary<ModelId, List<int>> carriedByKind, ModelId? id, bool durability,
-        int fullDurability)
+        int fullDurability, out bool matchedCarried)
     {
-        if (durability && id != null && carriedByKind.TryGetValue(id, out List<int>? durs) && durs.Count > 0)
+        if (id != null && carriedByKind.TryGetValue(id, out List<int>? durs) && durs.Count > 0)
         {
             int d = durs[0];
             durs.RemoveAt(0);
-            return d - 1;
+            matchedCarried = true;
+            return durability ? d - 1 : fullDurability;
         }
 
+        matchedCarried = false;
         return fullDurability;
     }
 

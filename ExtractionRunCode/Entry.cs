@@ -35,6 +35,7 @@ public static class Entry
             WarehouseStore.Register();
             PendingCarryStore.Register();
             ShopStore.Register();
+            ChallengeStore.Register();
             ExtractionRunData.Register();
             ExtractionSettingsPage.Register();
         }

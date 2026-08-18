@@ -21,10 +21,11 @@
 [*][b]搜打撤循环[/b]：赢了全拿，输了全丢。
 [*][b]耐久系统[/b]：每张卡/遗物有耐久。每次撤离成功，带进局的每件耐久 -1，归零即损坏不入库。死亡/放弃直接全损（不扣耐久）。瓦片右下角显示耐久（琥珀色「耐久 n」），归零显示红色「耗尽」；同种物品不同耐久的副本默认分开展示。可整体关闭。
 [*][b]撤离点事件[/b]：地图上会随机出现一个特殊的撤离节点，抵达后可提前撤离——普通撤离按容量限额带出（第一幕 15、第二幕 25、第三幕起 35，药水与金币免费），金币撤离付费可全部带走（费用随幕数递增，付不起降级为普通撤离），路过则继续跑局。从撤离点撤离按「失败」结算（无通关奖励），带出物品仍按耐久扣减后入库。
+[*][b]挑战系统[/b]：仓库大厅新增「挑战」页签。每日挑战（5 个随机槽位，可重复通关获奖励）+ 永久挑战（无奖励，记录通关次数）。
 [*][b]通关奖励[/b]：每通关一次，发放该角色整套初始牌组和初始遗物。
 [*][b]仓库界面[/b]：卡牌/遗物/药水三页，每页有搜索和多选过滤（来源、稀有度、类型、费用），虚拟化网格流畅滚动。
 [*][b]商店系统[/b]：仓库右下角「商店」，分购买/出售两页，库存每日自动刷新、可花金币手动刷新。
-[*][b]撤离结算[/b]：游戏结束新增「查看撤离结算」，展示存入或损失的全部物品；从撤离点提前撤离时单独显示「从撤离点撤离」。
+[*][b]撤离结算[/b]：游戏结束新增「查看撤离结算」，展示存入或损失的全部物品；从撤离点提前撤离时单独显示「从撤离点撤离」。局内克隆/复制的卡牌不会带回。
 [*][b]地图种子[/b]：仓库大厅底部可自定义种子（大写、O→0、I→1），留空则随机。仅本次会话有效，联机时全队沿用主机种子。
 [*][b]单人 & 联机[/b]：联机中每位玩家各自结算自己的装备。
 [*][b]搜刮动画[/b]：卡牌奖励和宝箱奖励会先被灰色遮盖，放大镜绕物品转动搜刮后揭示，营造搜刮手感（默认关闭，可在设置调整各稀有度时长与跳过键）。
@@ -73,11 +74,13 @@
 extraction reset                                           # 重置仓库（需确认）
 extraction add <card|relic|potion|gold> <id|数量> [count]   # 向仓库添加
 extraction remove <card|relic|potion|gold> <id|数量> [count] # 从仓库移除
+extraction refresh                                         # 立即重刷每日挑战池（无冷却）
 [/code]
 [list]
 [*][b]reset[/b]：清空并重发初始物品，需确认；跑局/大厅中不可用。
 [*][b]add[/b]：按 ID 添加（如 STRIKE，支持 Tab 补全），gold 直接填数量。[count] 默认为 1，上限 999。
 [*][b]remove[/b]：按 ID 移除金币或物品，[count] 默认为 1，上限 999。跑局/大厅中不可用；会同步清理携带中的对应物品。
+[*][b]refresh[/b]：立即重新随机每日挑战池。
 [/list]
 
 [h2]反馈问题时请务必附上日志文件[/h2]
@@ -103,7 +106,7 @@ Each save has its own persistent warehouse. Before a run, go to the Search-Loot-
 [*]Win = successful extraction: everything goes back to the warehouse.  
 [*]Die or abandon = failed extraction: you lose everything you carried.  
 [/olist]  
-First time? You get all Basic/Common cards, Starter/Common relics, and 1000 gold.  
+First time? You get all Basic/Common cards, Starter/Common relics, and 1000 gold.
 Deposited items are reset to base state (no upgrades, etc.) – only plain cards are stored.
 
 [h2]Features[/h2]  
@@ -113,15 +116,16 @@ Deposited items are reset to base state (no upgrades, etc.) – only plain cards
 [*][b]Backpack capacity[/b]: cards cost slots by rarity (Basic/Common:1, Uncommon:2, Rare:3, Ancient:4, others:2), relics cost 2. Default 15 slots. The bar shows X/15. Over-capacity auto-drops heaviest items. You can adjust in Settings.  
 [*][b]Search-Loot-Extract loop[/b]: winner takes all, loser loses everything.  
 [*][b]Durability[/b]: each card/relic has durability. After each win, carried items lose 1 durability; at 0 they break and don't return. Die/abandon loses all (no durability loss). Tiles show durability (amber "Durability n" or red "Broken"); copies of the same item at different durability show as separate tiles by default. Can be disabled in Settings.  
-[*][b]Extraction point event[/b]: a special node may spawn on the map; reaching it lets you end the run early and carry out selected loot — normal extraction (capacity-limited: 15 in act 1, 25 in act 2, 35 from act 3; potions & gold free), gold extraction (pay a fee, growing each act, to take everything; can't afford it? fall back to normal extraction), or pass on and keep running. Extracting this way counts as a defeat (no clear reward), but carried items still lose durability and are deposited. In multiplayer the whole party votes.  
-[*][b]Clear reward[/b]: each win gives you that character's full starter deck and starter relics for future runs.  
+[*][b]Extraction point event[/b]: a special node may spawn on the map; reaching it lets you end the run early and carry out selected loot — normal extraction (capacity-limited: 15 in act 1, 25 in act 2, 35 from act 3; potions & gold free), gold extraction (pay a fee, growing each act, to take everything; can't afford it? fall back to normal extraction), or pass on and keep running. Extracting this way counts as a defeat (no clear reward), but carried items still lose durability and are deposited. In multiplayer the whole party votes.
+[*][b]Challenge system[/b]: the hub adds a Challenge tab. Daily challenges (5 random slots per day, repeatable with rewards every Boss clear) + permanent challenges (no rewards, clear-count tracked). 
+[*][b]Clear reward[/b]: each win gives you that character's full starter deck and starter relics for future runs, run-level clones are not deposited.  
 [*][b]Warehouse hub[/b]: three tabs (cards/relics/potions), search & filters, smooth virtual grid, preloaded art.  
 [*][b]Hub shop[/b]: Buy/Sell tabs. Stock refreshes once per real day or on demand for a fee.  
 [*][b]Extraction report[/b]: game-over screen shows what was deposited or lost; extracting early from an extraction point shows its own header.  
 [*][b]Loot search animation[/b]: card rewards and chest relics start veiled and are revealed by a sweeping magnifier (default off; per-rarity durations and a skip key in Settings).  
 [*][b]Run seed[/b]: set a custom seed (uppercase, O→0, I→1) or leave blank for random. Session‑only; multiplayer follows host.  
-[*][b]Singleplayer & multiplayer[/b]: both work; each player's loadout settles independently.  
-[*][b]Settings page[/b]: backpack capacity, durability, extraction point, and loot animation options, plus reset to defaults.  
+[*][b]Singleplayer & multiplayer[/b]: both work; each player's loadout settles independently.
+[*][b]Settings page[/b]: backpack capacity, durability, challenges, extraction point, and loot animation options, plus reset to defaults.
 [/list]
 
 [h2]Shop[/h2]  
@@ -162,15 +166,17 @@ Settings are global and shared across all saves.
 
 [h2]Debug Commands[/h2]  
 In‑game console (local only):  
-[code]  
-extraction reset                                           # reset warehouse (confirmation)  
-extraction add <card|relic|potion|gold> <id|amount> [count] # add items/gold  
-extraction remove <card|relic|potion|gold> <id|amount> [count] # remove items/gold  
-[/code]  
-[list]  
-[*][b]reset[/b]: wipes and re‑grants starting items; confirmation; unavailable during runs/lobbies.  
-[*][b]add[/b]: add by ID (e.g. STRIKE, Tab completion), gold by amount. [count] defaults to 1 (max 999).  
-[*][b]remove[/b]: remove by ID or gold. [count] defaults to 1 (max 999). Unavailable during runs/lobbies; removes also from pending carry to avoid dupes.  
+[code]
+extraction reset                                           # reset warehouse (confirmation)
+extraction add <card|relic|potion|gold> <id|amount> [count] # add items/gold
+extraction remove <card|relic|potion|gold> <id|amount> [count] # remove items/gold
+extraction refresh                                         # re-roll daily challenge pool (no cooldown)
+[/code]
+[list]
+[*][b]reset[/b]: wipes and re‑grants starting items; confirmation; unavailable during runs/lobbies.
+[*][b]add[/b]: add by ID (e.g. STRIKE, Tab completion), gold by amount. [count] defaults to 1 (max 999).
+[*][b]remove[/b]: remove by ID or gold. [count] defaults to 1 (max 999). Unavailable during runs/lobbies; removes also from pending carry to avoid dupes.
+[*][b]refresh[/b]: instantly re-rolls the daily challenge pool.
 [/list]
 
 [h2]When reporting issues, please attach your log file.[/h2]  

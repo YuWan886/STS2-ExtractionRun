@@ -8,19 +8,18 @@ using ExtractionRun.Settings;
 namespace ExtractionRun.UI;
 
 /// <summary>
-/// The 搜打撤 hub shop: a full-screen screen (Layer 110) opened from the warehouse hub's bottom-right 商店 button and
-/// closed by its bottom-left 仓库 button / ESC. Opening it hides the warehouse hub (the two pages are exclusive — the
-/// hub is re-shown and refreshed on close), so gold/stock stay coherent when switching back. Two main tabs — 购买 (three
-/// stacked 卡牌 / 遗物 / 药水 sections with a doubled stock, refresh-shop button replacing card removal, stock rolled
-/// once per real calendar day) and 出售 (warehouse − carry groups with per-copy multi-select — left-click selects one
-/// copy, right-click removes one, shift selects/deselects the whole group — and filters incl. durability). The shop
-/// reads the SAME live warehouse and carry draft the hub holds.
-/// 搜打撤商店：从仓库大厅右下角「商店」按钮打开的全屏页面（Layer 110），由其左下角「仓库」按钮 / ESC 关闭。打开时隐藏仓库
-/// 大厅（两页互斥——关闭时恢复并刷新大厅，金币/库存保持一致）。两个主 Tab——购买（卡牌/遗物/药水三个竖排分区，库存翻倍，
-/// 原版商人布局的卡牌移除位置换成刷新商店；库存每个现实日历日 roll 一次）与出售（「仓库 − 携带」分组，按份多选——左键选
-/// 一件、右键减一件、Shift 全选/全不选，过滤含耐久度）。商店与大厅共享同一实时仓库与携带草稿。
+/// The 搜打撤 hub shop — a PAGE inside <see cref="WarehouseHubScreen"/> (switched by the top-left tab bar), sharing the
+/// hub's root + header. Two main tabs — 购买 (three stacked 卡牌 / 遗物 / 药水 sections with a doubled stock,
+/// refresh-shop button replacing card removal, stock rolled once per real calendar day) and 出售 (warehouse − carry
+/// groups with per-copy multi-select — left-click selects one copy, right-click removes one, shift selects/deselects
+/// the whole group — and filters incl. durability). The shop reads the SAME live warehouse and carry draft the hub
+/// holds; page switching persists the sell state via <see cref="PersistState"/>.
+/// 搜打撤商店——仓库大厅内嵌的一页（由左上角页签切换，共用大厅根节点与头部）。两个主 Tab——购买（卡牌/遗物/药水三个竖排分区，
+/// 库存翻倍，原版商人布局的卡牌移除位置换成刷新商店；库存每个现实日历日 roll 一次）与出售（「仓库 − 携带」分组，按份多选——
+/// 左键选一件、右键减一件、Shift 全选/全不选，过滤含耐久度）。商店与大厅共享同一实时仓库与携带草稿；切换页面时经 PersistState
+/// 持久化出售状态。
 /// </summary>
-public sealed partial class ShopScreen : CanvasLayer
+public sealed partial class ShopScreen : VBoxContainer
 {
     private enum MainTab { Buy, Sell }
     private enum SellTab { Cards, Relics, Potions }
@@ -63,9 +62,6 @@ public sealed partial class ShopScreen : CanvasLayer
     /// 独立显示出售行（耐久开启且设置开启）：卖价与耐久筛选按堆精确。</summary>
     private readonly bool _splitByDurability;
 
-    /// <summary>The shop currently open in the scene tree (null when closed). 当前打开中的商店（关闭时为 null）。</summary>
-    public static ShopScreen? Current { get; private set; }
-
     private MainTab _activeMain = MainTab.Buy;
     private SellTab _activeSell = SellTab.Cards;
 
@@ -80,7 +76,6 @@ public sealed partial class ShopScreen : CanvasLayer
     private readonly string[] _sellQueries = new string[3];
     private string _sellQuery = "";
 
-    private Label _goldChipLabel = null!;
     private Control _buyContent = null!;
     private Label _buyEmptyLabel = null!;
     private Button _refreshButton = null!;
@@ -104,7 +99,7 @@ public sealed partial class ShopScreen : CanvasLayer
         _hub = hub;
         _warehouse = warehouse;
         _carry = carry;
-        Layer = 110;
+        SizeFlagsVertical = Control.SizeFlags.ExpandFill;
 
         // Day rollover + first open: re-rolls stock when the stored date is stale, then load the live shop.
         // 翻页/首次打开：日期过期则全量重 roll 库存，然后加载实时商店。
@@ -123,30 +118,10 @@ public sealed partial class ShopScreen : CanvasLayer
 
     public override void _Ready()
     {
-        Current = this;
         BuildUi();
         Refresh();
         // Don't leave focus on a hub control underneath (typing would go to it).
         GetViewport().GuiReleaseFocus();
-    }
-
-    public override void _ExitTree()
-    {
-        if (Current == this)
-        {
-            Current = null;
-        }
-
-        base._ExitTree();
-    }
-
-    public override void _Input(InputEvent inputEvent)
-    {
-        if (inputEvent is InputEventKey { Pressed: true, Keycode: Key.Escape } key && !key.IsEcho())
-        {
-            Close();
-            GetViewport().SetInputAsHandled();
-        }
     }
 
     public override void _Process(double delta)
@@ -167,63 +142,20 @@ public sealed partial class ShopScreen : CanvasLayer
 
     private void BuildUi()
     {
-        var root = new Panel { Name = "ShopPanel" };
-        root.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        root.AddThemeStyleboxOverride("panel", ExtractionTheme.BackgroundBox());
-        root.Theme = ExtractionTheme.Instance;
-        AddChild(root);
+        Theme = ExtractionTheme.Instance;
+        AddThemeConstantOverride("separation", 20);
+        SizeFlagsVertical = Control.SizeFlags.ExpandFill;
 
-        var page = new MarginContainer();
-        page.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        page.AddThemeConstantOverride("margin_left", 36);
-        page.AddThemeConstantOverride("margin_right", 36);
-        page.AddThemeConstantOverride("margin_top", 28);
-        page.AddThemeConstantOverride("margin_bottom", 28);
-        root.AddChild(page);
-
-        var rootBox = new VBoxContainer();
-        rootBox.AddThemeConstantOverride("separation", 20);
-        page.AddChild(rootBox);
-
-        rootBox.AddChild(BuildHeader());
-        rootBox.AddChild(BuildMainTabBar());
+        AddChild(BuildMainTabBar());
 
         _buyContent = BuildBuyContent();
-        rootBox.AddChild(_buyContent);
+        AddChild(_buyContent);
 
         _sellContent = BuildSellContent();
-        rootBox.AddChild(_sellContent);
+        AddChild(_sellContent);
         _sellContent.Visible = false;
 
-        rootBox.AddChild(BuildFooter());
-    }
-
-    private Control BuildHeader()
-    {
-        var header = new HBoxContainer();
-        header.AddThemeConstantOverride("separation", 16);
-
-        var title = MakeLabel(ExtractionLocalization.ShopTitleText());
-        title.AddThemeFontOverride("font", ExtractionTheme.Bold);
-        title.AddThemeFontSizeOverride("font_size", ExtractionTheme.FontSizeTitle);
-        header.AddChild(title);
-
-        header.AddChild(MakeSpacer());
-
-        var chip = new PanelContainer();
-        chip.AddThemeStyleboxOverride("panel", ExtractionTheme.ChipBox());
-        var chipLabel = new Label
-        {
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        chipLabel.AddThemeColorOverride("font_color", ExtractionTheme.GoldChipText);
-        chipLabel.AddThemeFontSizeOverride("font_size", ExtractionTheme.FontSizeBody);
-        chip.AddChild(chipLabel);
-        _goldChipLabel = chipLabel;
-        header.AddChild(chip);
-
-        return header;
+        AddChild(BuildFooter());
     }
 
     private Control BuildMainTabBar()
@@ -1301,15 +1233,10 @@ public sealed partial class ShopScreen : CanvasLayer
         var row = new HBoxContainer();
         row.AddThemeConstantOverride("separation", 12);
 
-        // Bottom-left: back to the warehouse hub (the shop's only destination). 左下角：返回仓库大厅。
-        var warehouse = MakeButton(ExtractionLocalization.ShopWarehouseButtonText(), ExtractionTheme.ButtonSecondary);
-        warehouse.CustomMinimumSize = new Vector2(0f, 44f);
-        warehouse.Pressed += Close;
-        row.AddChild(warehouse);
-
         row.AddChild(MakeSpacer());
 
-        // Bottom-right: refresh shop (replaces the vanilla card-removal slot). Shown on the buy tab only.
+        // Bottom-right: refresh shop (replaces the vanilla card-removal slot). Shown on the buy tab only. Page
+        // switching lives in the hub's top-left tab bar. 右下角刷新商店（替代原版删卡槽位，仅购买页显示）；页面切换由大厅左上角页签负责。
         _refreshButton = MakeButton("", ExtractionTheme.ButtonSecondary);
         _refreshButton.CustomMinimumSize = new Vector2(0f, 44f);
         _refreshButton.Pressed += TryRefresh;
@@ -1320,10 +1247,8 @@ public sealed partial class ShopScreen : CanvasLayer
 
     // ----- Refresh 重建 -----
 
-    private void Refresh()
+    public void Refresh()
     {
-        _goldChipLabel.Text = ExtractionLocalization.GoldWarehouseText(_warehouse.Gold);
-
         int refreshCost = ShopStore.RefreshCost(_shop);
         _refreshButton.Text = ExtractionLocalization.ShopRefreshText(refreshCost);
         _refreshButton.Disabled = _warehouse.Gold < refreshCost;
@@ -1338,19 +1263,13 @@ public sealed partial class ShopScreen : CanvasLayer
         }
     }
 
-    private void Close()
+    /// <summary>Persists the shop's sell-filter/search state. Called by the hub when the shop page is left and on hub
+    /// close (the hub's own <c>SaveFilters</c> doesn't cover the Sell* keys). 持久化商店的出售筛选/搜索状态。离开商店页与
+    /// 关闭大厅时由大厅调用（大厅的 SaveFilters 不覆盖 Sell* 键）。</summary>
+    public void PersistState()
     {
         SaveSellFilters();
         WarehouseStore.Persist();
-        // The hub was hidden when the shop opened — bring it back (defensively guarded) and refresh it so gold/stock
-        // reflect the shop's trades. 打开商店时大厅被隐藏——这里恢复（防御性判活）并刷新，让金币/库存反映商店的交易。
-        if (GodotObject.IsInstanceValid(_hub))
-        {
-            _hub.Visible = true;
-            _hub.RefreshForExternalMutation();
-        }
-
-        QueueFree();
     }
 
     private static string SectionTitle(SellTab tab) => tab switch

@@ -4,7 +4,7 @@ using MegaCrit.Sts2.Core.Nodes.Events;
 using MegaCrit.Sts2.Core.Nodes.Rooms;
 using ExtractionRun.Modifier;
 
-namespace ExtractionRun.UI;
+namespace ExtractionRun.Patches;
 
 /// <summary>
 /// The two extraction options (普通撤离 / 金币撤离) are marked with <c>ThatWillKillPlayerIf(_ => true)</c> so they flash

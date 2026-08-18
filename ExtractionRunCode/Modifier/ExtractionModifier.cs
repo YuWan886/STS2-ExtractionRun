@@ -1,13 +1,19 @@
+using MegaCrit.Sts2.Core.Combat;
 using MegaCrit.Sts2.Core.Entities.Ascension;
 using MegaCrit.Sts2.Core.Entities.Cards;
+using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Map;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Saves.Runs;
+using MegaCrit.Sts2.Core.ValueProps;
 using ExtractionRun.Data;
 using ExtractionRun.Lifecycle;
 using ExtractionRun.Networking;
+using ExtractionRun.Patches;
+using ExtractionRun.UI;
 
 namespace ExtractionRun.Modifier;
 
@@ -50,6 +56,61 @@ public sealed class ExtractionModifier : ModifierModel
     /// </summary>
     public MapCoord? MarkedCoord => MarkedCol < 0 ? null : new MapCoord(MarkedCol, MarkedRow);
 
+    /// <summary>
+    /// Challenge ids carried by this run, comma-joined (the game's <c>[SavedProperty]</c> supports scalar types only —
+    /// a list wouldn't round-trip; ids are stable tokens so the join is safe). Written by the hub launch flow before the
+    /// modifier is set on the lobby; empty string = a normal extraction run, byte-for-byte today's behavior.
+    /// 本局携带的挑战 id（逗号拼接——[SavedProperty] 仅支持标量类型，列表无法往返；id 为稳定 token，拼接安全）。空串=普通搜打撤局。
+    /// </summary>
+    [SavedProperty]
+    public string ChallengeIds { get; set; } = "";
+
+    /// <summary>The parsed challenge id list. 解析出的挑战 id 列表。</summary>
+    public IReadOnlyList<string> ActiveChallengeIds =>
+        string.IsNullOrEmpty(ChallengeIds)
+            ? Array.Empty<string>()
+            : ChallengeIds.Split(',', StringSplitOptions.RemoveEmptyEntries);
+
+    /// <summary>The aggregated effects of every selected challenge (bitwise OR). 所有选中挑战聚合后的效果位。</summary>
+    public ChallengeEffects Effects => ChallengeRegistry.ComputeEffects(ActiveChallengeIds);
+
+    /// <summary>True when the run carries <paramref name="id"/>. 本局是否携带该挑战。</summary>
+    public bool HasChallenge(string id) => ActiveChallengeIds.Contains(id);
+
+    /// <summary>
+    /// The base extraction description, plus the selected challenges as a sorted per-line list at the bottom when this
+    /// run carries any — a normal extraction run (no challenges) is byte-for-byte the vanilla description. The list
+    /// follows the registry order (daily pool then permanents — the challenge page's display order); unknown/stale ids
+    /// simply drop out. One override covers every surface that reads the modifier description (in-run top-bar hover,
+    /// run-modifier UI). 基础搜打撤描述，本局携带挑战时在其底部追加按注册表顺序、每行一条的挑战列表；普通局字节级不变。
+    /// 未知/过期 id 自然过滤。改这一处即可覆盖所有读取 modifier 描述的表面（局内顶栏悬停、开局 modifier 界面）。
+    /// </summary>
+    public override LocString Description
+    {
+        get
+        {
+            IReadOnlyList<string> ids = ActiveChallengeIds;
+            if (ids.Count == 0)
+            {
+                return base.Description;
+            }
+
+            string[] lines = ChallengeRegistry.All
+                .Where(def => ids.Contains(def.Id))
+                .Select(def => "• " + ExtractionLocalization.ChallengeTitle(def.Id))
+                .ToArray();
+            if (lines.Length == 0)
+            {
+                return base.Description;
+            }
+
+            LocString loc = new LocString("modifiers", "EXTRACTION_MODIFIER.descriptionWithChallenges");
+            loc.Add("description", base.Description.GetFormattedText());
+            loc.Add("challenges", string.Join("\n", lines));
+            return loc;
+        }
+    }
+
     protected override void AfterRunCreated(RunState runState)
     {
         ExtractionSettlement.Clear();
@@ -63,6 +124,56 @@ public sealed class ExtractionModifier : ModifierModel
             // warehouse's full-durability copies and the deposit decrements from full. 旧档携带以 0 哨兵反序列化；回填满耐久，
             // 让下方消耗能精确匹配仓库满耐久副本、撤离从满耐久递减。
             WarehouseStore.BackfillCarryDurability(config);
+
+            // Challenge constraints reshape the carry BEFORE anything is injected or consumed, so the local consume
+            // below never spends warehouse copies the run never received. 挑战约束在任何注入/消耗前重塑携带，保证下方消耗
+            // 不会为局内实际没收到的仓库副本买单。
+            ChallengeEffects effects = ChallengeRegistry.ComputeEffects(ActiveChallengeIds);
+
+            // EmptyCarry: the run starts with nothing carried — the starter kit below stands in (deck + starter relics +
+            // 99 gold). The hub already forces the draft empty; a stale save is the only way items survive to here.
+            // 空携带挑战：开局不带任何物品——由下方起手包兜底（牌组 + 初始遗物 + 99 金币）。大厅已把草稿清空，仅旧档会残留。
+            if (effects.HasFlag(ChallengeEffects.EmptyCarry))
+            {
+                config.Cards.Clear();
+                config.Relics.Clear();
+                config.Potions.Clear();
+                config.Gold = 99;
+            }
+
+            // BasicCommonOnly: strip any carried card above Basic/Common, and pull it from the config so the consume
+            // skips it. The hub greys these out; a stale save is the only way one survives to here.
+            // 仅基础+普通：剔除携带中的高稀有度卡并从配置移除（消耗随之跳过）。大厅会灰化此类卡，仅旧档会漏网。
+            if (effects.HasFlag(ChallengeEffects.BasicCommonOnly) && config.Cards.Count > 0)
+            {
+                int dropped = config.Cards.RemoveAll(wc =>
+                    wc.Card.Id == null ||
+                    ModelDb.GetByIdOrNull<CardModel>(wc.Card.Id) is { } m && !ChallengeRegistry.IsBasicCommonRarity(m));
+                if (dropped > 0)
+                {
+                    Entry.Logger.Warn($"ExtractionModifier: dropped {dropped} non-Basic/Common card(s) for the BASIC_COMMON challenge.");
+                }
+            }
+
+            // StrikeOnly: strip any carried card that isn't a 打击 tag card, and pull it from the config so the consume
+            // skips it. The hub greys these out (and disables the challenge when no Strike is carryable); a stale save
+            // is the only way one survives to here. 只带打击牌：剔除携带中的非打击标签卡并从配置移除（消耗随之跳过）。
+            // 大厅会灰化此类卡（无打击可带时整个挑战禁用）；仅旧档会漏网。
+            if (effects.HasFlag(ChallengeEffects.StrikeOnly) && config.Cards.Count > 0)
+            {
+                int dropped = config.Cards.RemoveAll(wc =>
+                    wc.Card.Id == null ||
+                    ModelDb.GetByIdOrNull<CardModel>(wc.Card.Id) is { } m && !ChallengeRegistry.IsStrikeCard(m));
+                if (dropped > 0)
+                {
+                    Entry.Logger.Warn($"ExtractionModifier: dropped {dropped} non-Strike card(s) for the STRIKE_ONLY challenge.");
+                }
+            }
+
+            if (effects.HasFlag(ChallengeEffects.HpOne))
+            {
+                player.Creature.SetMaxHpInternal(1);
+            }
 
             foreach (RelicModel relic in player.Relics.ToList())
             {
@@ -109,8 +220,27 @@ public sealed class ExtractionModifier : ModifierModel
                     }
                 }
 
-                Entry.Logger.Warn($"ExtractionModifier: player {player.NetId} carried no cards; granted starter deck " +
-                                  $"({player.Deck.Cards.Count} cards).");
+                // EmptyCarry: the starter kit is the whole point — grant the character's starter relics too (the deck
+                // above already granted the starter (or generic-basic) deck). 空携带挑战：起手包即全部——额外发放角色初始遗物
+                // （牌组已在上面发放初始（或泛用基础）牌组）。
+                if (effects.HasFlag(ChallengeEffects.EmptyCarry))
+                {
+                    foreach (RelicModel starterRelic in player.Character.StartingRelics)
+                    {
+                        RelicModel relic = starterRelic.ToMutable();
+                        player.AddRelicInternal(relic, silent: true);
+                    }
+
+                    player.Gold = 99;
+                    Entry.Logger.Warn($"ExtractionModifier: player {player.NetId} in EMPTY_CARRY challenge — granted " +
+                                      $"starter kit ({player.Deck.Cards.Count} cards, " +
+                                      $"{player.Relics.Count} relics, {player.Gold} gold).");
+                }
+                else
+                {
+                    Entry.Logger.Warn($"ExtractionModifier: player {player.NetId} carried no cards; granted starter deck " +
+                                      $"({player.Deck.Cards.Count} cards).");
+                }
             }
 
             foreach (WarehouseCard wc in config.Cards)
@@ -176,6 +306,26 @@ public sealed class ExtractionModifier : ModifierModel
                 addedPotions++;
                 i++;
             }
+
+            // Curses: 2 random curses into the deck, drawn deterministically from the run RNG (same cards on every
+            // machine). 诅咒挑战：随机 2 张诅咒入牌组，用 run RNG 抽取（所有机器同一结果）。
+            if (effects.HasFlag(ChallengeEffects.Curses))
+            {
+                List<CardModel> cursePool = ModelDb.AllCards
+                    .Where(c => c.Rarity == CardRarity.Curse)
+                    .Distinct()
+                    .ToList();
+                for (int i = 0; i < 2 && cursePool.Count > 0; i++)
+                {
+                    CardModel curseTemplate = cursePool[runState.Rng.Niche.NextInt(cursePool.Count)];
+                    CardModel curse = curseTemplate.ToMutable();
+                    curse.FloorAddedToDeck = 1;
+                    runState.AddCard(curse, player);
+                    player.Deck.AddInternal(curse, silent: true);
+                }
+
+                Entry.Logger.Warn($"ExtractionModifier: player {player.NetId} in CURSES challenge — added 2 curses to the deck.");
+            }
         }
 
         ulong localNetId = RunManager.Instance?.NetService?.NetId ?? 0;
@@ -199,6 +349,156 @@ public sealed class ExtractionModifier : ModifierModel
     {
         // Reloading a saved extraction run must NOT re-inject or re-consume — the deck is already in the save and the
         // carried items were consumed when the run first started. Intentional no-op.
+    }
+
+    /// <summary>
+    /// Engine A — the BASIC_COMMON card-acquisition filter: every card reward (combat / elite / boss / treasure /
+    /// event) is constrained to Basic/Common cards. Curses/status cards never enter through this funnel (they are
+    /// direct deck grants), so the exemption is automatic. A reward that INSISTS on a rarity the filter forbids
+    /// (e.g. a rare-only event) is left alone rather than emptied into a crash — the caller's own constraint wins.
+    /// 引擎 A——BASIC_COMMON 卡牌获取过滤：所有卡牌奖励（战斗/精英/Boss/宝箱/事件）都限定为基础+普通。诅咒/状态卡不经由此
+    /// 漏斗入队（它们由事件/遗物直接塞入），豁免天然成立。强制要求被禁稀有度的奖励（如仅限稀有的事件）保持原样防止空池崩溃。
+    /// </summary>
+    public override CardCreationOptions ModifyCardRewardCreationOptions(Player player, CardCreationOptions options)
+    {
+        if (!Effects.HasFlag(ChallengeEffects.BasicCommonOnly))
+        {
+            return options;
+        }
+
+        try
+        {
+            if (!options.GetPossibleCards(player).Any(ChallengeRegistry.IsBasicCommonRarity))
+            {
+                return options; // filtering would empty this reward's pool — let the caller's rarity win
+            }
+
+            if (options.CardPools.Count > 0)
+            {
+                // WithCardPools clears its backing collection before enumerating the input. Snapshot the current
+                // view first, otherwise passing options.CardPools back into the same instance empties the reward.
+                // WithCardPools 会先清空内部集合再枚举输入；因此必须先快照当前视图，不能把同一实例的 CardPools 直接传回。
+                CardPoolModel[] pools = options.CardPools.ToArray();
+                Func<CardModel, bool>? existing = options.CardPoolFilter;
+                return options.WithCardPools(pools,
+                    existing == null
+                        ? ChallengeRegistry.IsBasicCommonRarity
+                        : card => existing(card) && ChallengeRegistry.IsBasicCommonRarity(card));
+            }
+
+            if (options.CustomCardPool != null)
+            {
+                CardModel[] filtered = options.CustomCardPool.Where(ChallengeRegistry.IsBasicCommonRarity).ToArray();
+                bool singleRarity = filtered.Select(c => c.Rarity).Distinct().Count() <= 1;
+                return options.WithCustomPool(filtered, singleRarity ? CardRarityOddsType.Uniform : options.RarityOdds);
+            }
+
+            return options;
+        }
+        catch (Exception)
+        {
+            return options; // defensive — never break reward generation for the challenge
+        }
+    }
+
+    /// <summary>
+    /// Engine A merchant arm: the in-run merchant sells Basic/Common only under the BASIC_COMMON challenge. An empty
+    /// filtered result falls back to the original pool (the merchant throws on an empty pool; better a few off-brand
+    /// cards than a broken shop). 引擎 A 的商人分支：仅基础+普通挑战下，局内商人只售基础+普通卡。过滤后为空时回退原池
+    /// （商人空池会抛异常——宁可偶尔卖出越界卡也不坏店）。
+    /// </summary>
+    public override IEnumerable<CardModel> ModifyMerchantCardPool(Player player, IEnumerable<CardModel> options)
+    {
+        if (!Effects.HasFlag(ChallengeEffects.BasicCommonOnly))
+        {
+            return options;
+        }
+
+        List<CardModel> filtered = options.Where(ChallengeRegistry.IsBasicCommonRarity).ToList();
+        return filtered.Count == 0 ? options : filtered;
+    }
+
+    /// <summary>
+    /// Engine F (DOUBLE_ENEMY) — damage arm: damage DEALT BY enemies is multiplied by 2. Guarded to the enemy dealer
+    /// (<c>dealer</c> non-player), so player damage is untouched; the modifier only exists in extraction runs, and the
+    /// effect flag gates the branch — outside the challenge this is byte-for-byte the base game. The HP arm lives in a
+    /// Harmony postfix on <c>CombatState.CreateCreature</c> (<see cref="DoubleEnemyPatch"/>) — it is the single funnel
+    /// through which every enemy spawns (initial combat, mid-combat summons, event fights), unlike
+    /// <c>AfterCreatureAddedToCombat</c> which only fires for creatures added mid-combat.
+    /// 引擎 F（DOUBLE_ENEMY）伤害臂：敌人造成的伤害 ×2。限定 dealer 为敌人（非玩家），玩家输出不受影响；modifier 仅存在于
+    /// 搜打撤局，且效果位门控——非挑战局与原版字节级一致。血量臂在 CombatState.CreateCreature 的 Harmony 后缀（见
+    /// DoubleEnemyPatch）——那是所有敌人生成的唯一漏斗（初始战斗、中途召唤、事件战），AfterCreatureAddedToCombat 只对
+    /// 战斗中后添加的生物触发，覆盖不全。
+    /// </summary>
+    public override decimal ModifyDamageMultiplicative(Creature? target, decimal amount, ValueProp props, Creature? dealer, CardModel? cardSource)
+    {
+        if (!Effects.HasFlag(ChallengeEffects.DoubleEnemy) || dealer == null || dealer.Side == CombatSide.Player)
+        {
+            return 1m;
+        }
+
+        return 2m;
+    }
+
+    /// <summary>
+    /// Places the 撤离点 quest marker on the marked `?` point, then applies the challenge map rules over the generated
+    /// map. Engine B (ALL_ELITE): every Monster point is rewritten to an Elite point (pure type rewrite, no RNG — see
+    /// the branch below). Engine G (ONE_REST): keeps exactly ONE rest point per act (grill-locked: random pick, run-RNG
+    /// deterministic on every machine), and rewrites every other RestSite point to <c>?</c> (Unknown). A `?` can roll
+    /// Monster/Event/Treasure/Shop but NEVER RestSite (UnknownMapPointOdds has no RestSite entry), so the rewritten
+    /// points turn into those — path connectivity is preserved by construction. Both rewrites restore on a fresh map
+    /// (new act / mid-act regen) and are idempotent over a saved map, matching the 撤离点 placement's SavedActMap
+    /// behaviour. 放置撤离点任务标记后对生成的地图应用挑战地图规则。引擎 B（ALL_ELITE）：每个 Monster 点重写为 Elite 点
+    /// （纯类型重写，无随机）。引擎 G（ONE_REST）：每幕只保留 1 个休息点（grill 锁定：随机抽，run RNG 全机器确定），
+    /// 其余 RestSite 点改写为 `?`。`?` 只会 roll 出战斗/事件/宝箱/商店、绝不会是休息室（UnknownMapPointOdds 无 RestSite 项），
+    /// 故被改写的点自然变成那些，路径连通性天然保留。两次重写在新地图（新幕/中途重生成）重新执行、对已保存地图幂等。
+    /// </summary>
+    public override Task AfterMapGenerated(ActMap map, int actIndex)
+    {
+        if (MarkedCoord is { } coord && map.HasPoint(coord))
+        {
+            map.GetPoint(coord)?.AddQuest(this);
+        }
+
+        // Engine B (ALL_ELITE): every Monster point becomes an Elite point — not just the encounter — so the map icon,
+        // the roll, the room, history and rewards are all consistently elite. A pure point-type rewrite (no RNG,
+        // deterministic on every machine). No CanBeModified filter on purpose: the base game's row-1 starters (the
+        // monsters right after the Ancient starting room) are marked CanBeModified=false, and those ARE the challenge's
+        // target — ONE_REST below likewise rewrites structural rest points. `?` keeps vanilla odds (an Unknown that
+        // rolls Monster stays a normal fight). 引擎 B（ALL_ELITE）：把每个 Monster 点重写为 Elite 点——不只是遭遇——
+        // 图标/roll/房间/历史/奖励全部一致精英。纯类型重写（无随机，全机器确定）。故意不过滤 CanBeModified：基础游戏
+        // 第 1 行起始怪（先古房间后的第一排）为 CanBeModified=false，恰是挑战目标——下方 ONE_REST 同样改写结构性休息点。
+        // `?` 保持原版概率（滚出普通战斗就是普通战斗）。
+        if (Effects.HasFlag(ChallengeEffects.AllElite))
+        {
+            foreach (MapPoint point in map.GetAllMapPoints())
+            {
+                if (point.PointType == MapPointType.Monster)
+                {
+                    point.PointType = MapPointType.Elite;
+                }
+            }
+        }
+
+        if (Effects.HasFlag(ChallengeEffects.OneRest))
+        {
+            List<MapPoint> rests = map.GetAllMapPoints()
+                .Where(p => p.PointType == MapPointType.RestSite)
+                .ToList();
+            if (rests.Count > 1)
+            {
+                MapPoint keep = rests[RunManager.Instance?.State?.Rng.Niche.NextInt(rests.Count) ?? 0];
+                foreach (MapPoint rest in rests)
+                {
+                    if (rest != keep)
+                    {
+                        rest.PointType = MapPointType.Unknown;
+                    }
+                }
+            }
+        }
+
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -251,18 +551,6 @@ public sealed class ExtractionModifier : ModifierModel
         return map;
     }
 
-    /// <summary>Marks the placed `?` point so the map shows its quest marker (the 撤离点 icon is swapped in by the
-    /// map-node patch). Runs after <c>ModifyGeneratedMapLate</c> on the same act entry. 给放置的 `?` 点挂标记，地图显示任务
-    /// 角标（撤离点图标由地图节点补丁替换）。与 ModifyGeneratedMapLate 同一次章节入口先后执行。</summary>
-    public override Task AfterMapGenerated(ActMap map, int actIndex)
-    {
-        if (MarkedCoord is { } coord && map.HasPoint(coord))
-        {
-            map.GetPoint(coord)?.AddQuest(this);
-        }
-
-        return Task.CompletedTask;
-    }
 
     /// <summary>
     /// Substitutes the 撤离点 event when the party pulls an event AT the marked point; otherwise pure pass-through.

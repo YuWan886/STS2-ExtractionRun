@@ -1,6 +1,7 @@
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Multiplayer.Game.Lobby;
 using ExtractionRun.Data;
+using ExtractionRun.Lifecycle;
 using ExtractionRun.Modifier;
 
 namespace ExtractionRun.Networking;
@@ -25,12 +26,22 @@ public static class ExtractionCarrySync
     }
 
     /// <summary>
-    /// Applies the extraction modifier to a lobby (host/singleplayer). Replaces the (normally empty) modifier list and
-    /// broadcasts <c>LobbyModifiersChangedMessage</c> so every machine's lobby carries it into the run.
-    /// 把搜打撤修正项应用到大厅（主机/单机）。</summary>
+    /// Applies the extraction modifier to a lobby (host/singleplayer), carrying the hub-selected challenges as
+    /// <c>[SavedProperty] ChallengeIds</c> (a session-only handoff consumed here — LAN rooms inherit it automatically).
+    /// Replaces the (normally empty) modifier list and broadcasts <c>LobbyModifiersChangedMessage</c> so every machine's
+    /// lobby carries it into the run. 把搜打撤修正项应用到大厅（主机/单机），并把大厅选定的挑战写入 [SavedProperty] ChallengeIds
+    /// （会话瞬态在此消费——LAN 房自动继承）。</summary>
     public static void ApplyExtractionModifier(StartRunLobby lobby)
     {
-        lobby.SetModifiers(new List<ModifierModel> { ModelDb.Modifier<ExtractionModifier>().ToMutable() });
+        ModifierModel model = ModelDb.Modifier<ExtractionModifier>().ToMutable();
+        if (ExtractionRunContext.PendingChallenges is { Count: > 0 } ids && model is ExtractionModifier modifier)
+        {
+            modifier.ChallengeIds = string.Join(",", ids);
+            ExtractionRunContext.PendingChallenges = null;
+            Entry.Logger.Info($"ExtractionCarrySync: applied challenge(s) {string.Join(", ", ids)} to extraction modifier.");
+        }
+
+        lobby.SetModifiers(new List<ModifierModel> { model });
     }
 
     /// <summary>True when the given modifiers include the extraction modifier. 修正项中是否含搜打撤修正项。</summary>

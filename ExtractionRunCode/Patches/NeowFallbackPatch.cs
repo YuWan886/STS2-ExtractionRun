@@ -4,7 +4,7 @@ using MegaCrit.Sts2.Core.Models.Events;
 using MegaCrit.Sts2.Core.Runs;
 using ExtractionRun.Modifier;
 
-namespace ExtractionRun.Compatibility;
+namespace ExtractionRun.Patches;
 
 /// <summary>
 /// Neow only offers its starting bonus when the run has no modifiers, or when at least one modifier contributes a

@@ -7,7 +7,7 @@ using MegaCrit.Sts2.Core.Rooms;
 using MegaCrit.Sts2.Core.Runs;
 using ExtractionRun.Modifier;
 
-namespace ExtractionRun.UI;
+namespace ExtractionRun.Patches;
 
 /// <summary>
 /// Turns the modifier-marked `?` point into a real 撤离点 node:

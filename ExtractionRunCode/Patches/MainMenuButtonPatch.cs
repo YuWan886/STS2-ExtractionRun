@@ -3,8 +3,9 @@ using HarmonyLib;
 using MegaCrit.Sts2.Core.Nodes;
 using MegaCrit.Sts2.Core.Nodes.GodotExtensions;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
+using ExtractionRun.UI;
 
-namespace ExtractionRun.UI;
+namespace ExtractionRun.Patches;
 
 /// <summary>
 /// Adds a 「搜打撤」 button to the singleplayer and multiplayer-host main-menu submenus, opening the warehouse hub.

@@ -1,4 +1,5 @@
 {
   "EXTRACTION_MODIFIER.title": "搜打撤",
-  "EXTRACTION_MODIFIER.description": "从仓库携带卡牌、遗物、药水与金币进局。通关=撤离成功（战利品存入仓库）；死亡或放弃=失去所有携带物品。"
+  "EXTRACTION_MODIFIER.description": "从仓库携带卡牌、遗物、药水与金币进局。通关=撤离成功（战利品存入仓库）；死亡或放弃=失去所有携带物品。",
+  "EXTRACTION_MODIFIER.descriptionWithChallenges": "{description}\n\n携带挑战：\n{challenges}"
 }

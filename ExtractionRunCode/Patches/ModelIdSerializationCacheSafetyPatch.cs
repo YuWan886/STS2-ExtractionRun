@@ -3,7 +3,7 @@ using HarmonyLib;
 using MegaCrit.Sts2.Core.Helpers;
 using MegaCrit.Sts2.Core.Models;
 
-namespace ExtractionRun.Compatibility;
+namespace ExtractionRun.Patches;
 
 /// <summary>
 ///     Guarantees the content-variant assembly's <see cref="AbstractModel"/> subtypes reach the game's net-ID map.

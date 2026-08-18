@@ -10,6 +10,7 @@ using MegaCrit.Sts2.Core.Saves.Runs;
 using STS2RitsuLib.Ui.Toast;
 using ExtractionRun.Data;
 using ExtractionRun.Lifecycle;
+using ExtractionRun.Modifier;
 using ExtractionRun.Settings;
 
 namespace ExtractionRun.UI;
@@ -55,6 +56,27 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     private const int PrewarmPerFrame = 8;
 
     private enum Tab { Cards, Relics, Potions }
+
+    /// <summary>Top-level hub pages (shown one at a time under the header). 大厅的顶层页面（头部下方同时只显示一个）。</summary>
+    private enum HubPage { Warehouse, Shop, Challenge }
+
+    private HubPage _activePage = HubPage.Warehouse;
+    private Button _tabWarehouse = null!;
+    private Button _tabShop = null!;
+    private Button _tabChallenge = null!;
+    private Control _warehousePage = null!;
+    private Control _shopPage = null!;
+    private Control _challengePage = null!;
+
+    /// <summary>Challenges selected for the next launch (hub-global session draft, like <c>_carry</c>). Multi-select;
+    /// bumped into <c>ExtractionRunContext.PendingChallenges</c> at StartRun. 下次开跑选定的挑战（大厅全局会话草稿，同 _carry）。
+    /// 可多选；开跑时写入 PendingChallenges。</summary>
+    private readonly List<string> _pendingChallenges = new();
+
+    private Label _challengeSummaryLabel = null!;
+    private Label _challengeHintLabel = null!;
+    private VBoxContainer _dailyChallengeList = null!;
+    private VBoxContainer _permanentChallengeList = null!;
 
     private enum FilterKind
     {
@@ -220,14 +242,6 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         // 原版主菜单返回按钮的 ui_cancel 绑定。
         if (inputEvent is InputEventKey { Pressed: true, Keycode: Key.Escape } key && !key.IsEcho())
         {
-            // ESC while the shop is open closes the shop, not the hub (which is hidden underneath anyway); the shop's
-            // own _Input consumes it first, this guard is just defense against ordering. 商店打开时 ESC 由其自己处理
-            // （只关商店、不关大厅——大厅此时已隐藏）；商店的 _Input 先消费，这里仅作顺序兜底。
-            if (ShopScreen.Current != null)
-            {
-                return;
-            }
-
             OnBack();
             GetViewport().SetInputAsHandled();
         }
@@ -265,17 +279,86 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
 
         rootBox.AddChild(BuildHeader());
 
+        _warehousePage = BuildWarehousePage();
+        rootBox.AddChild(_warehousePage);
+
+        _challengePage = BuildChallengePage();
+        rootBox.AddChild(_challengePage);
+
+        _shopPage = BuildShopPage();
+        rootBox.AddChild(_shopPage);
+
+        ShowPage(HubPage.Warehouse);
+    }
+
+    /// <summary>
+    /// The warehouse page: the existing warehouse card + carry card + launch footer, wrapped as one page. 仓库页：
+    /// 仓库卡片 + 携带卡片 + 开跑底部，作为一页包裹。</summary>
+    private Control BuildWarehousePage()
+    {
+        var page = new VBoxContainer
+        {
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
+        };
+        page.AddThemeConstantOverride("separation", 20);
+
         var content = new HBoxContainer
         {
             SizeFlagsVertical = Control.SizeFlags.ExpandFill,
         };
         content.AddThemeConstantOverride("separation", 24);
-        rootBox.AddChild(content);
-
         content.AddChild(BuildWarehouseCard());
         content.AddChild(BuildCarryCard());
+        page.AddChild(content);
 
-        rootBox.AddChild(BuildFooter());
+        page.AddChild(BuildFooter());
+        return page;
+    }
+
+    private Control BuildShopPage()
+    {
+        return new ShopScreen(this, _warehouse, _carry);
+    }
+
+    /// <summary>Shows one hub page, hiding the others; the tab bar follows. Leaving the shop page persists its sell state.
+    /// 显示指定页面并隐藏其余；顶部标签同步。离开商店页时持久化其出售状态。</summary>
+    private void ShowPage(HubPage page)
+    {
+        if (_activePage == HubPage.Shop && page != HubPage.Shop && _shopPage is ShopScreen leaving)
+        {
+            leaving.PersistState();
+        }
+
+        _activePage = page;
+        _warehousePage.Visible = page == HubPage.Warehouse;
+        _challengePage.Visible = page == HubPage.Challenge;
+        _shopPage.Visible = page == HubPage.Shop;
+
+        if (page == HubPage.Challenge)
+        {
+            RefreshChallengePage();
+        }
+        else if (page == HubPage.Shop)
+        {
+            if (_shopPage is ShopScreen shop)
+            {
+                shop.Refresh();
+            }
+        }
+
+        _tabWarehouse.ButtonPressed = page == HubPage.Warehouse;
+        _tabShop.ButtonPressed = page == HubPage.Shop;
+        _tabChallenge.ButtonPressed = page == HubPage.Challenge;
+    }
+
+    private void SwitchPage(HubPage page)
+    {
+        if (_activePage == page)
+        {
+            return;
+        }
+
+        ShowPage(page);
     }
 
     // ----- Header: title + gold chip + back -----
@@ -285,10 +368,37 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         var header = new HBoxContainer();
         header.AddThemeConstantOverride("separation", 16);
 
-        var title = MakeLabel(ExtractionLocalization.HubTitleText());
-        title.AddThemeFontOverride("font", ExtractionTheme.Bold);
-        title.AddThemeFontSizeOverride("font_size", ExtractionTheme.FontSizeTitle);
-        header.AddChild(title);
+        // Page switcher, top-left: one framed strip split evenly into 仓库 / 商店 / 挑战. 页面切换（左上角，一个等分为仓库/商店/挑战的长条）。
+        var pageSwitcher = new PanelContainer
+        {
+            CustomMinimumSize = new Vector2(390f, 44f),
+            ClipContents = true,
+        };
+        pageSwitcher.AddThemeStyleboxOverride("panel", ExtractionTheme.PageSwitcherBox());
+        var segments = new HBoxContainer
+        {
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
+        };
+        segments.AddThemeConstantOverride("separation", 0);
+
+        var group = new ButtonGroup();
+        _tabWarehouse = MakePageTabButton(ExtractionLocalization.PageWarehouseText(), group, HubPage.Warehouse);
+        _tabShop = MakePageTabButton(ExtractionLocalization.PageShopText(), group, HubPage.Shop);
+        _tabChallenge = MakePageTabButton(ExtractionLocalization.PageChallengeText(), group, HubPage.Challenge);
+        _tabWarehouse.ButtonPressed = true;
+        segments.AddChild(_tabWarehouse);
+        segments.AddChild(_tabShop);
+        segments.AddChild(_tabChallenge);
+        pageSwitcher.AddChild(segments);
+        header.AddChild(pageSwitcher);
+
+        // The client modal has no challenge page — the host's challenges apply to the whole party. 客机模态无挑战页
+        // （挑战由主机选定，全队共享）。
+        if (_mode == HubMode.MultiplayerClient)
+        {
+            _tabChallenge.Visible = false;
+        }
 
         header.AddChild(MakeSpacer());
 
@@ -369,6 +479,30 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
             if (on)
             {
                 SwitchTab(tab);
+            }
+        };
+        return button;
+    }
+
+    private Button MakePageTabButton(string text, ButtonGroup group, HubPage page)
+    {
+        var button = new Button
+        {
+            Text = text,
+            ThemeTypeVariation = ExtractionTheme.ButtonSegment,
+            ToggleMode = true,
+            ButtonGroup = group,
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill,
+            SizeFlagsStretchRatio = 1f,
+        };
+        button.Toggled += on =>
+        {
+            // Guard against the construction-time ButtonPressed=true firing before the pages exist. 构建期
+            // ButtonPressed=true 会在页面创建前触发 Toggled，此守卫忽略之。
+            if (on && _warehousePage != null)
+            {
+                SwitchPage(page);
             }
         };
         return button;
@@ -683,32 +817,6 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
                           $"{_carry.Relics.Count}r/{_carry.Potions.Count}p/{_carry.Gold}g).");
     }
 
-    /// <summary>
-    /// Opens the shop against the live warehouse and the hub's carry draft (the SAME draft reference, so the shop
-    /// reads the same warehouse−carry availability the hub shows). Hub filter state is persisted first so nothing is
-    /// lost while the shop takes over; the hub is then HIDDEN — the two pages are exclusive, the shop re-shows it on
-    /// close — and refreshed after every transaction, so returning shows updated gold/stock. 打开商店：对着实时仓库与大厅的
-    /// 携带草稿（同一草稿引用，商店看到与大厅一致的「仓库 − 携带」可用性）。先落盘过滤状态；随后隐藏大厅（两页互斥——商店关闭时
-    /// 恢复），每次交易后刷新，返回时金币/库存都是最新。
-    /// </summary>
-    private void OpenShop()
-    {
-        SaveFilters();
-        WarehouseStore.Persist();
-        // Hide the hub so the shop takes the whole screen instead of stacking on top (the shop re-shows it on close).
-        // 隐藏大厅，让商店独占屏幕而不是叠在大厅之上（商店关闭时恢复）。
-        Visible = false;
-        var shop = new ShopScreen(this, _warehouse, _carry);
-        if (NGame.Instance is NGame game)
-        {
-            game.AddChild(shop);
-        }
-        else
-        {
-            GetTree().Root.AddChild(shop);
-        }
-    }
-
     // ----- Gold stepper (custom SpinBox replacement, fully themeable) -----
 
     private Control BuildGoldRow()
@@ -889,23 +997,18 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         seedRow.Visible = !isClient;
         seedHost.AddChild(seedRow);
 
-        // Shop button pinned to the footer's right edge (every mode — a client's shop is their own profile data).
-        // 商店按钮贴靠底部右缘（所有模式——客机的商店是其本地档案数据）。
-        var shopHost = new VBoxContainer
-        {
-            MouseFilter = Control.MouseFilterEnum.Ignore,
-            Alignment = BoxContainer.AlignmentMode.Center,
-        };
-        shopHost.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        row.AddChild(shopHost);
-
-        var shopButton = MakeButton(ExtractionLocalization.ShopOpenButtonText(), ExtractionTheme.ButtonSecondary);
-        shopButton.CustomMinimumSize = new Vector2(0f, 44f);
-        shopButton.SizeFlagsHorizontal = Control.SizeFlags.ShrinkEnd;
-        shopButton.Pressed += OpenShop;
-        shopHost.AddChild(shopButton);
-
         footer.AddChild(row);
+
+        // Selected-challenge summary (the client modal has no challenge page, so it stays blank there). 已选挑战摘要
+        // （客机模态无挑战页，恒为空）。
+        _challengeSummaryLabel = new Label
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Visible = false,
+        };
+        _challengeSummaryLabel.AddThemeColorOverride("font_color", ExtractionTheme.TextSecondary);
+        _challengeSummaryLabel.AddThemeFontSizeOverride("font_size", ExtractionTheme.FontSizeSmall);
+        footer.AddChild(_challengeSummaryLabel);
 
         // Hint shown while the carry is empty: the deck-clearing modifier would otherwise start a dead 0-card run.
         _startHintLabel = new Label
@@ -940,6 +1043,11 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     private void Refresh()
     {
         WarehouseCache.Ensure(_warehouse, _splitByDurability);
+
+        // A challenge selection that invalidates the draft (empty-carry, basic/common-only) clamps it live so the
+        // tiles, carry panel and start gate always agree. 选中挑战后草稿可能失效（空携带/仅基础+普通），实时钳制保证瓦片、
+        // 携带面板与开跑门一致。
+        ClampDraftToChallenges();
 
         int availableGold = Math.Max(0, _warehouse.Gold - _carryGold);
         _goldChipLabel.Text = ExtractionLocalization.GoldWarehouseText(availableGold);
@@ -981,6 +1089,27 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         bool canStart = CanProceed();
         _startButton.Disabled = !canStart;
         _startHintLabel.Visible = !canStart;
+
+        // Selected-challenge summary: host/singleplayer shows the session draft; the client modal shows the HOST's
+        // challenges read off the lobby modifier (zero extra sync). 已选挑战摘要：单机/主机显示会话草稿；客机模态显示主机挑战
+        // （从大厅 modifier 读取，零额外同步）。
+        if (_mode == HubMode.MultiplayerClient)
+        {
+            string hostChallenges = _lobby?.Modifiers.OfType<ExtractionModifier>().FirstOrDefault()?.ActiveChallengeIds
+                .Select(ExtractionLocalization.ChallengeTitle)
+                is { } titles && titles.Any()
+                ? string.Join(" / ", titles)
+                : "";
+            _challengeSummaryLabel.Text = hostChallenges.Length > 0
+                ? ExtractionLocalization.ChallengeSummaryText(hostChallenges)
+                : "";
+        }
+        else
+        {
+            _challengeSummaryLabel.Text = ChallengeSummaryText();
+        }
+
+        _challengeSummaryLabel.Visible = _challengeSummaryLabel.Text.Length > 0;
 
         // An empty carry has nothing worth sharing as a gear code. 空携带没有值得分享的战备码。
         _generateButton.Disabled = CarryIsEmpty;
@@ -1229,7 +1358,8 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
                     }
                 },
                 g.Rep.Id, _showDurability ? g.Durability : null,
-                Disabled: g.Rep.Id is ModelId addId && budget.MoreAllowed(_carry, CarryCodec.ItemKind.Card, addId) <= 0));
+                Disabled: !CanCarryCardTile(g) ||
+                          (g.Rep.Id is ModelId addId && budget.MoreAllowed(_carry, CarryCodec.ItemKind.Card, addId) <= 0)));
         }
 
         UpdateLimitHint(Tab.Cards, filtered, rows.Count);
@@ -1248,6 +1378,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         bool sourceOn = selSources.Count > 0;
         string query = _query;
         CarryBudget budget = CarryBudget.FromSettings();
+        bool emptyCarry = ChallengeRegistry.HasEffect(_pendingChallenges, ChallengeEffects.EmptyCarry);
 
         int filtered = 0;
         foreach (ExtractionItemTiles.RelicGroup g in varieties)
@@ -1286,7 +1417,8 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
                     }
                 },
                 g.Rep.Id, _showDurability ? g.Durability : null,
-                Disabled: g.Rep.Id is ModelId addId && budget.MoreAllowed(_carry, CarryCodec.ItemKind.Relic, addId) <= 0));
+                Disabled: emptyCarry ||
+                          (g.Rep.Id is ModelId addId && budget.MoreAllowed(_carry, CarryCodec.ItemKind.Relic, addId) <= 0)));
         }
 
         UpdateLimitHint(Tab.Relics, filtered, rows.Count);
@@ -1304,6 +1436,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         bool rarityOn = selRarities.Count > 0;
         bool sourceOn = selSources.Count > 0;
         string query = _query;
+        bool emptyCarry = ChallengeRegistry.HasEffect(_pendingChallenges, ChallengeEffects.EmptyCarry);
 
         int filtered = 0;
         foreach (ExtractionItemTiles.PotionGroup g in varieties)
@@ -1341,7 +1474,8 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
                         AddToCarryPotions(id);
                     }
                 },
-                g.Rep.Id));
+                g.Rep.Id,
+                Disabled: emptyCarry));
         }
 
         UpdateLimitHint(Tab.Potions, filtered, rows.Count);
@@ -1594,6 +1728,11 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
             RitsuToastService.ShowInfo(ExtractionLocalization.CapacityClampedText(dropped));
         }
 
+        // Challenge constraints (empty-carry / basic-common) may have invalidated the draft since the last refresh —
+        // clamp once more so the persisted carry always matches what the run enforces. 挑战约束可能在上次刷新后使草稿失效——再次
+        // 钳制，保证持久化携带与局内执行的约束一致。
+        ClampDraftToChallenges();
+
         if (!CanProceed())
         {
             Entry.Logger.Info("WarehouseHub: blocked empty-carry start (carry at least one card).");
@@ -1613,6 +1752,9 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         // 种子为仅本次会话、主机所有的跑局参数；留空即随机。无论有无都写入（无则 null），杜绝取消发起残留的旧种子泄漏进下一局。
         string seed = _seedInput.Text.Trim();
         ExtractionRunContext.PendingSeed = seed.Length > 0 ? seed : null;
+        ExtractionRunContext.PendingChallenges = _pendingChallenges.Count > 0
+            ? new List<string>(_pendingChallenges)
+            : null;
         ExtractionRunContext.IsExtractionLaunch = true;
         CloseHub();
 
@@ -1690,8 +1832,13 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     }
 
     /// <summary>True when the hub may proceed: a non-empty carry, or an empty carry when carrying any card is impossible
-    /// (the run's starter-deck fallback keeps it playable). 是否可继续：携带非空；或携带为空但已不可能带任何卡（初始牌组兜底可玩）。</summary>
-    private bool CanProceed() => _carry.Cards.Count > 0 || !CanCarryAnyCards;
+    /// (the run's starter-deck fallback keeps it playable) — or the EMPTY_CARRY challenge, which demands the empty carry
+    /// and supplies the starter kit. 是否可继续：携带非空；或携带为空但已不可能带任何卡（初始牌组兜底可玩）；或选中 EMPTY_CARRY
+    /// 挑战（要求空携带并自带起手包）。</summary>
+    private bool CanProceed() =>
+        ChallengeRegistry.HasEffect(_pendingChallenges, ChallengeEffects.EmptyCarry)
+        || _carry.Cards.Count > 0
+        || !CanCarryAnyCards;
 
     private bool CanCarryAnyCards
     {
@@ -1719,9 +1866,91 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         }
     }
 
+    // ----- Challenge-constraint helpers 挑战约束助手 -----
+
+    /// <summary>
+    /// Clamps the carry draft to the selected challenges: EMPTY_CARRY empties everything (gold included), BASIC_COMMON
+    /// drops cards above Basic/Common. The authoritative clamp lives in <c>ExtractionModifier.AfterRunCreated</c> — this
+    /// is the hub-side mirror so the UI never shows an un-injectable carry. 把携带草稿钳制到所选挑战：EMPTY_CARRY 清空全部
+    /// （含金币）、BASIC_COMMON 剔除基础/普通以上卡。权威钳制在 modifier 注入处，此处为界面侧镜像。
+    /// </summary>
+    private void ClampDraftToChallenges()
+    {
+        ChallengeEffects effects = ChallengeRegistry.ComputeEffects(_pendingChallenges);
+        if (effects.HasFlag(ChallengeEffects.EmptyCarry))
+        {
+            _carry.Cards.Clear();
+            _carry.Relics.Clear();
+            _carry.Potions.Clear();
+            _carryGold = 0;
+            _carry.Gold = 0;
+            return;
+        }
+
+        if (effects.HasFlag(ChallengeEffects.BasicCommonOnly) && _carry.Cards.Count > 0)
+        {
+            _carry.Cards.RemoveAll(wc =>
+                wc.Card.Id == null ||
+                ModelDb.GetByIdOrNull<CardModel>(wc.Card.Id) is { } m && !ChallengeRegistry.IsBasicCommonRarity(m));
+        }
+
+        // StrikeOnly: non-Strike carried cards are dropped from the draft (the run-side injector enforces the same
+        // filter as defense-in-depth). 只带打击牌：剔除携带中的非打击卡（局内注入器同样过滤作纵深防御）。
+        if (effects.HasFlag(ChallengeEffects.StrikeOnly) && _carry.Cards.Count > 0)
+        {
+            _carry.Cards.RemoveAll(wc =>
+                wc.Card.Id == null ||
+                ModelDb.GetByIdOrNull<CardModel>(wc.Card.Id) is { } m && !ChallengeRegistry.IsStrikeCard(m));
+        }
+    }
+
+    /// <summary>Whether a card group's add-tile may be pressed under the selected challenges. 该卡牌瓦片在所选挑战下可否添加。</summary>
+    private bool CanCarryCardTile(ExtractionItemTiles.CardGroup g)
+    {
+        ChallengeEffects effects = ChallengeRegistry.ComputeEffects(_pendingChallenges);
+        if (effects.HasFlag(ChallengeEffects.EmptyCarry))
+        {
+            return false;
+        }
+
+        if (effects.HasFlag(ChallengeEffects.BasicCommonOnly)
+            && (g.Rep.Id is not ModelId id
+                || ModelDb.GetByIdOrNull<CardModel>(id) is not { } m
+                || !ChallengeRegistry.IsBasicCommonRarity(m)))
+        {
+            return false;
+        }
+
+        if (effects.HasFlag(ChallengeEffects.StrikeOnly)
+            && (g.Rep.Id is not ModelId strikeId
+                || ModelDb.GetByIdOrNull<CardModel>(strikeId) is not { } strikeModel
+                || !ChallengeRegistry.IsStrikeCard(strikeModel)))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private string ChallengeSummaryText()
+    {
+        if (_pendingChallenges.Count == 0)
+        {
+            return "";
+        }
+
+        return ExtractionLocalization.ChallengeSummaryText(
+            string.Join(" / ", _pendingChallenges.Select(ExtractionLocalization.ChallengeTitle)));
+    }
+
     private void CloseHub()
     {
         SaveFilters();
+        if (_shopPage is ShopScreen shop)
+        {
+            shop.PersistState();
+        }
+
         WarehouseStore.Persist();
         QueueFree();
     }

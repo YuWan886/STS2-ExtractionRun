@@ -316,6 +316,33 @@ public static class ExtractionLocalization
     // ----- Warehouse hub UI (LocString on the main_menu_ui table) -----
 
     public static string HubTitleText() => Text("EXTRACTION_RUN.hub.title");
+
+    // ----- Challenge system 挑战系统 -----
+
+    public static string PageWarehouseText() => Text("EXTRACTION_RUN.page.warehouse");
+    public static string PageShopText() => Text("EXTRACTION_RUN.page.shop");
+    public static string PageChallengeText() => Text("EXTRACTION_RUN.page.challenge");
+    public static string ChallengePageTitleText() => Text("EXTRACTION_RUN.challenge.title");
+    public static string ChallengeSectionDailyText() => Text("EXTRACTION_RUN.challenge.section.daily");
+    public static string ChallengeSectionPermanentText() => Text("EXTRACTION_RUN.challenge.section.permanent");
+    public static string ChallengeClearCountText(int count) => Formatted("EXTRACTION_RUN.challenge.cleared", count);
+    public static string ChallengeSelectedText() => Text("EXTRACTION_RUN.challenge.selected");
+    public static string ChallengeNoneHintText() => Text("EXTRACTION_RUN.challenge.noneHint");
+    public static string ChallengeSelectedHintText(int count) => Formatted("EXTRACTION_RUN.challenge.selectedHint", count);
+    public static string ChallengeTitle(string id) => Text("EXTRACTION_RUN.challenge." + id + ".title");
+    public static string ChallengeDesc(string id) => Text("EXTRACTION_RUN.challenge." + id + ".desc");
+    public static string ChallengeRewardDoubleText() => Text("EXTRACTION_RUN.challenge.reward.double");
+    public static string ChallengeRewardAllText(string rarity) => Formatted("EXTRACTION_RUN.challenge.reward.all", rarity);
+    public static string ChallengeRewardRandomText(int count, string rarity) =>
+        Formatted("EXTRACTION_RUN.challenge.reward.random", count, rarity);
+    public static string ChallengeRewardAllCardsText() => Text("EXTRACTION_RUN.challenge.reward.allCards");
+    public static string ChallengeRewardRandomRelicText(int count, string rarity) =>
+        Formatted("EXTRACTION_RUN.challenge.reward.randomRelic", count, rarity);
+    public static string ChallengeRewardAncientRelicsText(int count) =>
+        Formatted("EXTRACTION_RUN.challenge.reward.ancientRelics", count);
+    public static string ChallengeRewardFixedText(int count, string name) =>
+        Formatted("EXTRACTION_RUN.challenge.reward.fixed", count, name);
+    public static string ChallengeSummaryText(string joined) => Formatted("EXTRACTION_RUN.challenge.summary", joined);
     public static string SectionCardsText() => Text("EXTRACTION_RUN.hub.cards");
     public static string SectionRelicsText() => Text("EXTRACTION_RUN.hub.relics");
     public static string SectionPotionsText() => Text("EXTRACTION_RUN.hub.potions");

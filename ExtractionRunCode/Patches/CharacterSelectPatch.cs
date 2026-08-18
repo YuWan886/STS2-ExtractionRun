@@ -6,8 +6,9 @@ using MegaCrit.Sts2.Core.Nodes.Screens.CharacterSelect;
 using ExtractionRun.Data;
 using ExtractionRun.Lifecycle;
 using ExtractionRun.Networking;
+using ExtractionRun.UI;
 
-namespace ExtractionRun.UI;
+namespace ExtractionRun.Patches;
 
 /// <summary>
 /// Hooks the character-select screen for the 搜打撤 launch flow:

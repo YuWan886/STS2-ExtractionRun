@@ -798,6 +798,226 @@ public static class WarehouseStore
     }
 
     /// <summary>
+    /// Challenge rarity reward: grants the cleared character's pool cards of ONE rarity — either every qualifying card
+    /// (count 0, one of each) or N random draws with replacement. Repeats are intentional: a fixed three-card reward
+    /// must still grant three cards when the character owns only one or two cards of that rarity. Normalized to base
+    /// state at full durability, like the clear reward. Grants into the ACTIVE warehouse (durability-mode respecting)
+    /// and returns the granted copies for the settlement screen. 挑战稀有度奖励：发放通关角色池中某一稀有度卡牌——每张各一份
+    /// （count 0）或有放回随机抽 N 张。允许重复：固定发 3 张时，即使角色池中该稀有度只有 1 或 2 种，也必须实际发满 3 张。
+    /// 按普通战利品归一化满耐久入账，写入当前活动仓库；返回本次发放的副本供结算界面展示。
+    /// </summary>
+    public static (List<WarehouseCard> Cards, List<WarehouseRelic> Relics) GrantRarityReward(
+        CharacterModel character, CardRarity rarity, int count)
+    {
+        var granted = new List<WarehouseCard>();
+        try
+        {
+            List<CardModel> qualifying = character.CardPool.AllCards
+                .Where(c => c.Rarity == rarity)
+                .Distinct()
+                .ToList();
+            List<CardModel> picks = qualifying;
+            if (count > 0 && qualifying.Count > 0)
+            {
+                picks = Enumerable.Range(0, count)
+                    .Select(_ => qualifying[Random.Shared.Next(qualifying.Count)])
+                    .ToList();
+            }
+
+            var store = RitsuLibFramework.GetDataStore(Entry.ModId);
+            store.Modify<WarehouseData>(ActiveKey, data =>
+            {
+                data.Version++;
+                foreach (CardModel card in picks)
+                {
+                    try
+                    {
+                        WarehouseCard wc = new()
+                        {
+                            Card = NormalizeCard(card.ToMutable().ToSerializable()),
+                            Durability = MaxDurabilityForCard(card.Id),
+                        };
+                        data.Cards.Add(wc);
+                        granted.Add(wc);
+                    }
+                    catch (Exception ex)
+                    {
+                        Entry.Logger.Warn($"GrantRarityReward: skipping card {card.Id}: {ex.Message}");
+                    }
+                }
+            });
+            store.Save(ActiveKey);
+        }
+        catch (Exception ex)
+        {
+            Entry.Logger.Warn($"GrantRarityReward failed for rarity {rarity}: {ex.Message}");
+        }
+
+        return (granted, new List<WarehouseRelic>());
+    }
+
+    /// <summary>
+    /// Fixed-card challenge reward: grants <paramref name="count"/> copies of each id in <paramref name="cardIds"/>
+    /// (STRIKE_ONLY's 3 Hellraisers), normalized to base state at full durability, into the ACTIVE warehouse. Ignores
+    /// the cleared character — a fixed reward is pool-agnostic. Unknown/unloaded ids are skipped with a warning (a mod
+    /// content id that isn't loaded grants nothing). Returns the granted copies for the settlement screen.
+    /// 固定卡牌挑战奖励：发放 cardIds 中每个 id 各 count 张（如 STRIKE_ONLY 的 3 张地狱狂徒），归一化满耐久入当前活动仓库。
+    /// 无视通关角色——固定奖励与角色池无关。加载不到/未知的 id 跳过并警告（未加载的 mod 内容发不出就是不发）。返回本次发放副本供结算展示。
+    /// </summary>
+    public static (List<WarehouseCard> Cards, List<WarehouseRelic> Relics) GrantFixedCards(
+        string[] cardIds, int count)
+    {
+        var granted = new List<WarehouseCard>();
+        try
+        {
+            var store = RitsuLibFramework.GetDataStore(Entry.ModId);
+            store.Modify<WarehouseData>(ActiveKey, data =>
+            {
+                data.Version++;
+                foreach (string id in cardIds)
+                {
+                    ModelId cardId = new(ModelId.SlugifyCategory<CardModel>(), id);
+                    CardModel? card = ModelDb.GetByIdOrNull<CardModel>(cardId);
+                    if (card == null)
+                    {
+                        Entry.Logger.Warn($"GrantFixedCards: skipping unloaded card {id}.");
+                        continue;
+                    }
+
+                    for (int i = 0; i < count; i++)
+                    {
+                        try
+                        {
+                            WarehouseCard wc = new()
+                            {
+                                Card = NormalizeCard(card.ToMutable().ToSerializable()),
+                                Durability = MaxDurabilityForCard(card.Id),
+                            };
+                            data.Cards.Add(wc);
+                            granted.Add(wc);
+                        }
+                        catch (Exception ex)
+                        {
+                            Entry.Logger.Warn($"GrantFixedCards: skipping card {id}: {ex.Message}");
+                        }
+                    }
+                }
+            });
+            store.Save(ActiveKey);
+        }
+        catch (Exception ex)
+        {
+            Entry.Logger.Warn($"GrantFixedCards failed: {ex.Message}");
+        }
+
+        return (granted, new List<WarehouseRelic>());
+    }
+
+    /// <summary>
+    /// All-of-pool challenge reward (DOUBLE_ENEMY): every card in the cleared character's pool, one copy each, all
+    /// rarities (Basic through Ancient, plus anything else the pool holds), normalized to base state at full durability,
+    /// into the ACTIVE warehouse. Skips un-serializable cards defensively. Returns the granted copies for the settlement
+    /// screen. 全池挑战奖励（DOUBLE_ENEMY）：通关角色池中的每张卡各一张（所有稀有度），归一化满耐久入当前活动仓库。
+    /// 防御性跳过不可序列化的卡。返回本次发放副本供结算展示。
+    /// </summary>
+    public static (List<WarehouseCard> Cards, List<WarehouseRelic> Relics) GrantAllCardsReward(CharacterModel character)
+    {
+        var granted = new List<WarehouseCard>();
+        try
+        {
+            List<CardModel> qualifying = character.CardPool.AllCards
+                .GroupBy(c => c.Id)
+                .Select(g => g.First())
+                .ToList();
+            var store = RitsuLibFramework.GetDataStore(Entry.ModId);
+            store.Modify<WarehouseData>(ActiveKey, data =>
+            {
+                data.Version++;
+                foreach (CardModel card in qualifying)
+                {
+                    try
+                    {
+                        WarehouseCard wc = new()
+                        {
+                            Card = NormalizeCard(card.ToMutable().ToSerializable()),
+                            Durability = MaxDurabilityForCard(card.Id),
+                        };
+                        data.Cards.Add(wc);
+                        granted.Add(wc);
+                    }
+                    catch (Exception ex)
+                    {
+                        Entry.Logger.Warn($"GrantAllCardsReward: skipping card {card.Id}: {ex.Message}");
+                    }
+                }
+            });
+            store.Save(ActiveKey);
+        }
+        catch (Exception ex)
+        {
+            Entry.Logger.Warn($"GrantAllCardsReward failed: {ex.Message}");
+        }
+
+        return (granted, new List<WarehouseRelic>());
+    }
+
+    /// <summary>
+    /// Challenge relic reward (ONE_REST): grants N random relics of ONE rarity, normalized to base state at full
+    /// durability, into the ACTIVE warehouse. Drawn from the whole game's relic set — Ancient relics live only in the
+    /// shared/event pools, never in a character's own relic pool, so scoping to <c>character.RelicPool</c> would grant
+    /// nothing for a reward like ONE_REST's 5 Ancient relics. Returns the granted copies for the settlement screen.
+    /// 挑战遗物奖励（ONE_REST）：从全游戏遗物中随机 N 个指定稀有度遗物，归一化满耐久入当前活动仓库。远古遗物只存在于公共/事件池，
+    /// 角色遗物池里一个都没有——限定角色池会让「5 个随机远古遗物」这类奖励永远发不出。返回本次发放副本供结算展示。
+    /// </summary>
+    public static (List<WarehouseCard> Cards, List<WarehouseRelic> Relics) GrantRelicRarityReward(
+        CharacterModel character, RelicRarity rarity, int count)
+    {
+        var granted = new List<WarehouseRelic>();
+        try
+        {
+            List<RelicModel> qualifying = ModelDb.AllRelics
+                .Where(r => r.Rarity == rarity)
+                .Distinct()
+                .ToList();
+            List<RelicModel> picks = qualifying;
+            if (count > 0 && qualifying.Count > 0)
+            {
+                picks = qualifying.OrderBy(_ => Random.Shared.Next()).Take(Math.Min(count, qualifying.Count)).ToList();
+            }
+
+            var store = RitsuLibFramework.GetDataStore(Entry.ModId);
+            store.Modify<WarehouseData>(ActiveKey, data =>
+            {
+                data.Version++;
+                foreach (RelicModel relic in picks)
+                {
+                    try
+                    {
+                        WarehouseRelic wr = new()
+                        {
+                            Relic = NormalizeRelic(relic.ToMutable().ToSerializable()),
+                            Durability = MaxDurabilityForRelic(),
+                        };
+                        data.Relics.Add(wr);
+                        granted.Add(wr);
+                    }
+                    catch (Exception ex)
+                    {
+                        Entry.Logger.Warn($"GrantRelicRarityReward: skipping relic {relic.Id}: {ex.Message}");
+                    }
+                }
+            });
+            store.Save(ActiveKey);
+        }
+        catch (Exception ex)
+        {
+            Entry.Logger.Warn($"GrantRelicRarityReward failed for rarity {rarity}: {ex.Message}");
+        }
+
+        return (new List<WarehouseCard>(), granted);
+    }
+
+    /// <summary>
     /// Strips a relic down to its base state: no saved props (stack amounts), no deck-floor marker. 把遗物归一为基础态（去属性）。
     /// </summary>
     public static SerializableRelic NormalizeRelic(SerializableRelic relic)

@@ -1,7 +1,7 @@
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Multiplayer.Serialization;
 
-namespace ExtractionRun.Compatibility;
+namespace ExtractionRun.Patches;
 
 /// <summary>
 ///     Forces the game's <c>ModelIdSerializationCache.Init</c> to run through the loader's reflection bridge.

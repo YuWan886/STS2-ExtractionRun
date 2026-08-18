@@ -7,8 +7,9 @@ using MegaCrit.Sts2.Core.Nodes.Screens.GameOverScreen;
 using MegaCrit.Sts2.Core.Runs;
 using ExtractionRun.Lifecycle;
 using ExtractionRun.Networking;
+using ExtractionRun.UI;
 
-namespace ExtractionRun.UI;
+namespace ExtractionRun.Patches;
 
 /// <summary>
 /// Adds a 「查看撤离结算」 button to the vanilla game-over screen's summary page (next to "Return to Main Menu"),

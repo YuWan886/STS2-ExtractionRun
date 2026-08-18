@@ -5,7 +5,7 @@ using MegaCrit.Sts2.Core.Runs;
 using ExtractionRun.Modifier;
 using ExtractionRun.Networking;
 
-namespace ExtractionRun.Compatibility;
+namespace ExtractionRun.Patches;
 
 /// <summary>
 /// The base game's <c>event</c> console command resolves both its lookup and its autocomplete from

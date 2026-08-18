@@ -27,6 +27,14 @@ public static class ExtractionRunContext
     public static string? PendingSeed { get; set; }
 
     /// <summary>
+    /// Challenge ids selected in the warehouse hub for the next extraction run (host/singleplayer only); null/empty =
+    /// a normal run. Consumed into the modifier by <c>CharacterSelectPatch</c> before the run begins (a session-only
+    /// handoff, like <see cref="PendingSeed"/> — never persisted with the carry). 仓库大厅为下一局选定的挑战 id（仅主机/单机）；
+    /// 空为普通跑局。开跑前由 CharacterSelectPatch 写入 modifier（仅会话瞬态，同 PendingSeed——不随携带持久化）。
+    /// </summary>
+    public static IReadOnlyList<string>? PendingChallenges { get; set; }
+
+    /// <summary>
     /// Set only by the STS2-Game-Lobby compat when the host creates an extraction room: the room's ENet host and
     /// lobby are already live before the character-select init, so the host has had no chance to configure a carry in
     /// the warehouse hub. Consumed by <c>CharacterSelectPatch</c> right after it stages the pending carry and applies
@@ -44,6 +52,7 @@ public static class ExtractionRunContext
         IsExtractionLaunch = false;
         PendingRunModifiers = null;
         PendingSeed = null;
+        PendingChallenges = null;
         HostCarrySetupRequired = false;
     }
 }
