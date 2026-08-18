@@ -36,9 +36,17 @@ public static class ExtractionCarrySync
         ModifierModel model = ModelDb.Modifier<ExtractionModifier>().ToMutable();
         if (ExtractionRunContext.PendingChallenges is { Count: > 0 } ids && model is ExtractionModifier modifier)
         {
-            modifier.ChallengeIds = string.Join(",", ids);
+            ChallengeSelectionResult selection = ChallengeSelectionService.NormalizeRunIds(ids);
+            modifier.ChallengeIds = ChallengeSelectionService.SerializeRunIds(selection.Ids);
+            modifier.ChallengeCatalogSchemaVersion = ChallengeRegistry.CatalogSchemaVersion;
+            modifier.ChallengeCatalogHash = ChallengeRegistry.CatalogHash;
             ExtractionRunContext.PendingChallenges = null;
-            Entry.Logger.Info($"ExtractionCarrySync: applied challenge(s) {string.Join(", ", ids)} to extraction modifier.");
+            if (selection.RejectedIds.Count > 0)
+            {
+                Entry.Logger.Warn($"ExtractionCarrySync: rejected invalid/duplicate challenge id(s): " +
+                                  string.Join(", ", selection.RejectedIds));
+            }
+            Entry.Logger.Info($"ExtractionCarrySync: applied challenge(s) {string.Join(", ", selection.Ids)} to extraction modifier.");
         }
 
         lobby.SetModifiers(new List<ModifierModel> { model });

@@ -65,17 +65,23 @@ public sealed class ExtractionModifier : ModifierModel
     [SavedProperty]
     public string ChallengeIds { get; set; } = "";
 
+    /// <summary>Catalog protocol carried with challenge ids so mismatched multiplayer clients fail before play.</summary>
+    [SavedProperty]
+    public int ChallengeCatalogSchemaVersion { get; set; }
+
+    /// <summary>Digest of challenge rules and rewards carried with this run's challenge selection.</summary>
+    [SavedProperty]
+    public string ChallengeCatalogHash { get; set; } = "";
+
     /// <summary>The parsed challenge id list. 解析出的挑战 id 列表。</summary>
     public IReadOnlyList<string> ActiveChallengeIds =>
-        string.IsNullOrEmpty(ChallengeIds)
-            ? Array.Empty<string>()
-            : ChallengeIds.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        ChallengeSelectionService.ParseRunIds(ChallengeIds).Ids;
 
-    /// <summary>The aggregated effects of every selected challenge (bitwise OR). 所有选中挑战聚合后的效果位。</summary>
-    public ChallengeEffects Effects => ChallengeRegistry.ComputeEffects(ActiveChallengeIds);
+    /// <summary>Normalized parameterized rules for this run. 本局挑战归一化后的参数化规则。</summary>
+    public ChallengeRuntime Challenges => ChallengeRuntime.FromIds(ActiveChallengeIds);
 
     /// <summary>True when the run carries <paramref name="id"/>. 本局是否携带该挑战。</summary>
-    public bool HasChallenge(string id) => ActiveChallengeIds.Contains(id);
+    public bool HasChallenge(string id) => Challenges.ChallengeIds.Contains(id);
 
     /// <summary>
     /// The base extraction description, plus the selected challenges as a sorted per-line list at the bottom when this
@@ -113,9 +119,11 @@ public sealed class ExtractionModifier : ModifierModel
 
     protected override void AfterRunCreated(RunState runState)
     {
+        ValidateChallengeCatalog();
         ExtractionSettlement.Clear();
         ExtractionPointFlow.Clear();
         CarriedPickupQueue.Reset();
+        ChallengeRuntime challenges = Challenges;
 
         foreach (Player player in runState.Players)
         {
@@ -128,30 +136,28 @@ public sealed class ExtractionModifier : ModifierModel
             // Challenge constraints reshape the carry BEFORE anything is injected or consumed, so the local consume
             // below never spends warehouse copies the run never received. 挑战约束在任何注入/消耗前重塑携带，保证下方消耗
             // 不会为局内实际没收到的仓库副本买单。
-            ChallengeEffects effects = ChallengeRegistry.ComputeEffects(ActiveChallengeIds);
-
             // EmptyCarry: the run starts with nothing carried — the starter kit below stands in (deck + starter relics +
             // 99 gold). The hub already forces the draft empty; a stale save is the only way items survive to here.
             // 空携带挑战：开局不带任何物品——由下方起手包兜底（牌组 + 初始遗物 + 99 金币）。大厅已把草稿清空，仅旧档会残留。
-            if (effects.HasFlag(ChallengeEffects.EmptyCarry))
+            if (challenges.StartsEmpty)
             {
                 config.Cards.Clear();
                 config.Relics.Clear();
                 config.Potions.Clear();
-                config.Gold = 99;
+                config.Gold = challenges.StarterGold;
             }
 
             // BasicCommonOnly: strip any carried card above Basic/Common, and pull it from the config so the consume
             // skips it. The hub greys these out; a stale save is the only way one survives to here.
             // 仅基础+普通：剔除携带中的高稀有度卡并从配置移除（消耗随之跳过）。大厅会灰化此类卡，仅旧档会漏网。
-            if (effects.HasFlag(ChallengeEffects.BasicCommonOnly) && config.Cards.Count > 0)
+            if (challenges.HasCarryRarityFilter && config.Cards.Count > 0)
             {
                 int dropped = config.Cards.RemoveAll(wc =>
                     wc.Card.Id == null ||
-                    ModelDb.GetByIdOrNull<CardModel>(wc.Card.Id) is { } m && !ChallengeRegistry.IsBasicCommonRarity(m));
+                    ModelDb.GetByIdOrNull<CardModel>(wc.Card.Id) is { } m && !challenges.AllowsCarryCard(m));
                 if (dropped > 0)
                 {
-                    Entry.Logger.Warn($"ExtractionModifier: dropped {dropped} non-Basic/Common card(s) for the BASIC_COMMON challenge.");
+                    Entry.Logger.Warn($"ExtractionModifier: dropped {dropped} card(s) rejected by carry rarity rules.");
                 }
             }
 
@@ -159,20 +165,20 @@ public sealed class ExtractionModifier : ModifierModel
             // skips it. The hub greys these out (and disables the challenge when no Strike is carryable); a stale save
             // is the only way one survives to here. 只带打击牌：剔除携带中的非打击标签卡并从配置移除（消耗随之跳过）。
             // 大厅会灰化此类卡（无打击可带时整个挑战禁用）；仅旧档会漏网。
-            if (effects.HasFlag(ChallengeEffects.StrikeOnly) && config.Cards.Count > 0)
+            if (challenges.HasCarryTag(CardTag.Strike) && config.Cards.Count > 0)
             {
                 int dropped = config.Cards.RemoveAll(wc =>
                     wc.Card.Id == null ||
-                    ModelDb.GetByIdOrNull<CardModel>(wc.Card.Id) is { } m && !ChallengeRegistry.IsStrikeCard(m));
+                    ModelDb.GetByIdOrNull<CardModel>(wc.Card.Id) is { } m && !challenges.AllowsCarryCard(m));
                 if (dropped > 0)
                 {
-                    Entry.Logger.Warn($"ExtractionModifier: dropped {dropped} non-Strike card(s) for the STRIKE_ONLY challenge.");
+                    Entry.Logger.Warn($"ExtractionModifier: dropped {dropped} card(s) rejected by carry tag rules.");
                 }
             }
 
-            if (effects.HasFlag(ChallengeEffects.HpOne))
+            if (challenges.StartingMaxHp is int maxHp)
             {
-                player.Creature.SetMaxHpInternal(1);
+                player.Creature.SetMaxHpInternal(maxHp);
             }
 
             foreach (RelicModel relic in player.Relics.ToList())
@@ -223,7 +229,7 @@ public sealed class ExtractionModifier : ModifierModel
                 // EmptyCarry: the starter kit is the whole point — grant the character's starter relics too (the deck
                 // above already granted the starter (or generic-basic) deck). 空携带挑战：起手包即全部——额外发放角色初始遗物
                 // （牌组已在上面发放初始（或泛用基础）牌组）。
-                if (effects.HasFlag(ChallengeEffects.EmptyCarry))
+                if (challenges.StartsEmpty)
                 {
                     foreach (RelicModel starterRelic in player.Character.StartingRelics)
                     {
@@ -231,7 +237,7 @@ public sealed class ExtractionModifier : ModifierModel
                         player.AddRelicInternal(relic, silent: true);
                     }
 
-                    player.Gold = 99;
+                    player.Gold = challenges.StarterGold;
                     Entry.Logger.Warn($"ExtractionModifier: player {player.NetId} in EMPTY_CARRY challenge — granted " +
                                       $"starter kit ({player.Deck.Cards.Count} cards, " +
                                       $"{player.Relics.Count} relics, {player.Gold} gold).");
@@ -309,13 +315,13 @@ public sealed class ExtractionModifier : ModifierModel
 
             // Curses: 2 random curses into the deck, drawn deterministically from the run RNG (same cards on every
             // machine). 诅咒挑战：随机 2 张诅咒入牌组，用 run RNG 抽取（所有机器同一结果）。
-            if (effects.HasFlag(ChallengeEffects.Curses))
+            if (challenges.RandomCurseCount > 0)
             {
                 List<CardModel> cursePool = ModelDb.AllCards
                     .Where(c => c.Rarity == CardRarity.Curse)
                     .Distinct()
                     .ToList();
-                for (int i = 0; i < 2 && cursePool.Count > 0; i++)
+                for (int i = 0; i < challenges.RandomCurseCount && cursePool.Count > 0; i++)
                 {
                     CardModel curseTemplate = cursePool[runState.Rng.Niche.NextInt(cursePool.Count)];
                     CardModel curse = curseTemplate.ToMutable();
@@ -324,7 +330,8 @@ public sealed class ExtractionModifier : ModifierModel
                     player.Deck.AddInternal(curse, silent: true);
                 }
 
-                Entry.Logger.Warn($"ExtractionModifier: player {player.NetId} in CURSES challenge — added 2 curses to the deck.");
+                Entry.Logger.Warn($"ExtractionModifier: player {player.NetId} challenge rules added " +
+                                  $"{challenges.RandomCurseCount} curse(s) to the deck.");
             }
         }
 
@@ -361,14 +368,15 @@ public sealed class ExtractionModifier : ModifierModel
     /// </summary>
     public override CardCreationOptions ModifyCardRewardCreationOptions(Player player, CardCreationOptions options)
     {
-        if (!Effects.HasFlag(ChallengeEffects.BasicCommonOnly))
+        ChallengeRuntime challenges = Challenges;
+        if (!challenges.HasCardAcquisitionFilter)
         {
             return options;
         }
 
         try
         {
-            if (!options.GetPossibleCards(player).Any(ChallengeRegistry.IsBasicCommonRarity))
+            if (!options.GetPossibleCards(player).Any(challenges.AllowsAcquiredCard))
             {
                 return options; // filtering would empty this reward's pool — let the caller's rarity win
             }
@@ -380,18 +388,27 @@ public sealed class ExtractionModifier : ModifierModel
                 // WithCardPools 会先清空内部集合再枚举输入；因此必须先快照当前视图，不能把同一实例的 CardPools 直接传回。
                 CardPoolModel[] pools = options.CardPools.ToArray();
                 Func<CardModel, bool>? existing = options.CardPoolFilter;
+#if STS2_CARD_CREATION_OPTIONS_HAS_WITH_FILTER
+                return options.WithCardPools(pools).WithFilter(
+                    existing == null
+                        ? challenges.AllowsAcquiredCard
+                        : card => existing(card) && challenges.AllowsAcquiredCard(card));
+#else
                 return options.WithCardPools(pools,
                     existing == null
-                        ? ChallengeRegistry.IsBasicCommonRarity
-                        : card => existing(card) && ChallengeRegistry.IsBasicCommonRarity(card));
+                        ? challenges.AllowsAcquiredCard
+                        : card => existing(card) && challenges.AllowsAcquiredCard(card));
+#endif
             }
 
+#if !STS2_CARD_CREATION_OPTIONS_HAS_WITH_FILTER
             if (options.CustomCardPool != null)
             {
-                CardModel[] filtered = options.CustomCardPool.Where(ChallengeRegistry.IsBasicCommonRarity).ToArray();
+                CardModel[] filtered = options.CustomCardPool.Where(challenges.AllowsAcquiredCard).ToArray();
                 bool singleRarity = filtered.Select(c => c.Rarity).Distinct().Count() <= 1;
                 return options.WithCustomPool(filtered, singleRarity ? CardRarityOddsType.Uniform : options.RarityOdds);
             }
+#endif
 
             return options;
         }
@@ -409,12 +426,13 @@ public sealed class ExtractionModifier : ModifierModel
     /// </summary>
     public override IEnumerable<CardModel> ModifyMerchantCardPool(Player player, IEnumerable<CardModel> options)
     {
-        if (!Effects.HasFlag(ChallengeEffects.BasicCommonOnly))
+        ChallengeRuntime challenges = Challenges;
+        if (!challenges.HasCardAcquisitionFilter)
         {
             return options;
         }
 
-        List<CardModel> filtered = options.Where(ChallengeRegistry.IsBasicCommonRarity).ToList();
+        List<CardModel> filtered = options.Where(challenges.AllowsAcquiredCard).ToList();
         return filtered.Count == 0 ? options : filtered;
     }
 
@@ -430,14 +448,24 @@ public sealed class ExtractionModifier : ModifierModel
     /// DoubleEnemyPatch）——那是所有敌人生成的唯一漏斗（初始战斗、中途召唤、事件战），AfterCreatureAddedToCombat 只对
     /// 战斗中后添加的生物触发，覆盖不全。
     /// </summary>
-    public override decimal ModifyDamageMultiplicative(Creature? target, decimal amount, ValueProp props, Creature? dealer, CardModel? cardSource)
+    public override decimal ModifyDamageMultiplicative(
+        Creature? target,
+        decimal amount,
+        ValueProp props,
+        Creature? dealer,
+        CardModel? cardSource
+#if STS2_DAMAGE_HOOK_HAS_CARD_PLAY
+        , CardPlay? cardPlay
+#endif
+    )
     {
-        if (!Effects.HasFlag(ChallengeEffects.DoubleEnemy) || dealer == null || dealer.Side == CombatSide.Player)
+        ChallengeRuntime challenges = Challenges;
+        if (challenges.EnemyDamageMultiplier == 1m || dealer == null || dealer.Side == CombatSide.Player)
         {
             return 1m;
         }
 
-        return 2m;
+        return challenges.EnemyDamageMultiplier;
     }
 
     /// <summary>
@@ -469,31 +497,35 @@ public sealed class ExtractionModifier : ModifierModel
         // 图标/roll/房间/历史/奖励全部一致精英。纯类型重写（无随机，全机器确定）。故意不过滤 CanBeModified：基础游戏
         // 第 1 行起始怪（先古房间后的第一排）为 CanBeModified=false，恰是挑战目标——下方 ONE_REST 同样改写结构性休息点。
         // `?` 保持原版概率（滚出普通战斗就是普通战斗）。
-        if (Effects.HasFlag(ChallengeEffects.AllElite))
+        ChallengeRuntime challenges = Challenges;
+        foreach (MapPoint point in map.GetAllMapPoints())
         {
-            foreach (MapPoint point in map.GetAllMapPoints())
-            {
-                if (point.PointType == MapPointType.Monster)
-                {
-                    point.PointType = MapPointType.Elite;
-                }
-            }
+            point.PointType = challenges.TransformMapPoint(point.PointType);
         }
 
-        if (Effects.HasFlag(ChallengeEffects.OneRest))
+        foreach (MapPointLimitRule rule in challenges.MapPointLimits)
         {
-            List<MapPoint> rests = map.GetAllMapPoints()
-                .Where(p => p.PointType == MapPointType.RestSite)
+            List<MapPoint> points = map.GetAllMapPoints()
+                .Where(point => point.PointType == rule.PointType)
                 .ToList();
-            if (rests.Count > 1)
+            if (points.Count <= rule.MaxPerAct)
             {
-                MapPoint keep = rests[RunManager.Instance?.State?.Rng.Niche.NextInt(rests.Count) ?? 0];
-                foreach (MapPoint rest in rests)
+                continue;
+            }
+
+            var kept = new HashSet<MapPoint>();
+            for (int i = 0; i < rule.MaxPerAct && points.Count > 0; i++)
+            {
+                int index = RunManager.Instance?.State?.Rng.Niche.NextInt(points.Count) ?? 0;
+                kept.Add(points[index]);
+                points.RemoveAt(index);
+            }
+
+            foreach (MapPoint point in points)
+            {
+                if (!kept.Contains(point))
                 {
-                    if (rest != keep)
-                    {
-                        rest.PointType = MapPointType.Unknown;
-                    }
+                    point.PointType = rule.Replacement;
                 }
             }
         }
@@ -568,5 +600,34 @@ public sealed class ExtractionModifier : ModifierModel
         }
 
         return currentEvent;
+    }
+
+    private void ValidateChallengeCatalog()
+    {
+        if (string.IsNullOrWhiteSpace(ChallengeIds))
+        {
+            return;
+        }
+
+        // Old saves predate the protocol fields. Preserve their playable challenge run, but make the unverified state
+        // explicit in logs; every newly launched run always carries the fields below.
+        if (ChallengeCatalogSchemaVersion == 0 && string.IsNullOrEmpty(ChallengeCatalogHash))
+        {
+            Entry.Logger.Warn("ExtractionModifier: loading legacy challenge run without a catalog protocol signature.");
+            return;
+        }
+
+        if (ChallengeCatalogSchemaVersion != ChallengeRegistry.CatalogSchemaVersion
+            || !string.Equals(ChallengeCatalogHash, ChallengeRegistry.CatalogHash, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Challenge catalog mismatch. All players must use the same challenge catalog.");
+        }
+
+        ChallengeSelectionResult parsed = ChallengeSelectionService.ParseRunIds(ChallengeIds);
+        if (parsed.RejectedIds.Count > 0)
+        {
+            Entry.Logger.Warn("ExtractionModifier: ignored invalid/duplicate challenge id(s): " +
+                              string.Join(", ", parsed.RejectedIds));
+        }
     }
 }

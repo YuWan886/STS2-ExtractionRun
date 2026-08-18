@@ -31,7 +31,8 @@ public static class ChallengeMapPatch
 
             RunState? state = RunManager.Instance?.State;
             ExtractionModifier? modifier = state?.Modifiers.OfType<ExtractionModifier>().FirstOrDefault();
-            if (modifier?.Effects.HasFlag(ChallengeEffects.AllElite) != true)
+            ChallengeRuntime? challenges = modifier?.Challenges;
+            if (challenges == null || challenges.TransformMapPoint(MapPointType.Monster) != MapPointType.Elite)
             {
                 return true;
             }

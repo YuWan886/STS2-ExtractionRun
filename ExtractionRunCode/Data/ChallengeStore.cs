@@ -1,6 +1,9 @@
 using STS2RitsuLib;
 using STS2RitsuLib.Data;
 using STS2RitsuLib.Utils.Persistence;
+using System.Buffers.Binary;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace ExtractionRun.Data;
 
@@ -45,30 +48,68 @@ public static class ChallengeStore
         var store = RitsuLibFramework.GetDataStore(Entry.ModId);
         store.Modify<ChallengeData>(DataKey, data =>
         {
-            if (data.DailyDate == Today() && data.DailyIds.Count > 0)
+            NormalizePersistentState(data);
+            string today = Today();
+            bool catalogChanged = !string.IsNullOrEmpty(data.DailyCatalogHash)
+                && data.DailyCatalogHash != ChallengeRegistry.CatalogHash;
+            if (data.DailyDate != today)
             {
-                return;
+                data.DailyDate = today;
+                data.DailyRollRevision = 0;
+                data.DailyRollSeed = CreateDailySeed(today, data.DailyRollRevision);
+                data.DailyIds = RollDailyIds(seed: data.DailyRollSeed);
+            }
+            else
+            {
+                // Keep today's valid offers stable across a catalog upgrade; only invalid/removed ids are backfilled.
+                if (data.DailyRollSeed == 0)
+                {
+                    data.DailyRollSeed = CreateDailySeed(today, data.DailyRollRevision);
+                }
+                data.DailyIds = RollDailyIds(data.DailyIds, data.DailyRollSeed);
+                if (catalogChanged)
+                {
+                    Entry.Logger.Info("ChallengeStore: catalog changed; preserved valid daily offers and backfilled gaps.");
+                }
             }
 
-            data.DailyDate = Today();
-            data.DailyIds = RollDailyIds();
+            data.CatalogSchemaVersion = ChallengeRegistry.CatalogSchemaVersion;
+            data.DailyCatalogHash = ChallengeRegistry.CatalogHash;
         });
         store.Save(DataKey);
     }
 
     /// <summary>Five distinct daily ids drawn from the registry's daily pool (fewer than slots → the whole pool).
     /// 从注册表每日池抽取五个互不重复的 id（少于槽位 → 整池）。</summary>
-    private static List<string> RollDailyIds()
+    private static List<string> RollDailyIds(IEnumerable<string>? preservedIds = null, int seed = 0)
     {
         List<string> pool = ChallengeRegistry.Dailies.Select(d => d.Id).ToList();
+        List<string> result = ChallengeSelectionService.NormalizeRunIds(preservedIds).Ids
+            .Where(ChallengeRegistry.IsDaily)
+            .Take(DailySlotCount)
+            .ToList();
         if (pool.Count <= DailySlotCount)
         {
             // Fewer/equal entries than slots: every daily challenge is on offer today (distinct by construction).
             return pool;
         }
 
-        // More entries than slots: draw distinct ids without replacement. 条目多于槽位：不放回抽取。
-        return pool.OrderBy(_ => Random.Shared.Next()).Take(DailySlotCount).ToList();
+        // More entries than slots: draw distinct ids without replacement. Preserve still-valid old slots when a catalog
+        // migration removed an id, so updating the mod does not reshuffle an entire day for the player.
+        int missing = DailySlotCount - result.Count;
+        if (missing > 0)
+        {
+            List<string> candidates = pool.Where(id => !result.Contains(id)).ToList();
+            var random = new Random(seed);
+            for (int i = candidates.Count - 1; i > 0; i--)
+            {
+                int swap = random.Next(i + 1);
+                (candidates[i], candidates[swap]) = (candidates[swap], candidates[i]);
+            }
+            result.AddRange(candidates.Take(missing));
+        }
+
+        return result;
     }
 
     /// <summary>Re-rolls the day's daily pool immediately (console command). The date key is unchanged, so a later
@@ -78,7 +119,24 @@ public static class ChallengeStore
     public static void RefreshDaily()
     {
         var store = RitsuLibFramework.GetDataStore(Entry.ModId);
-        store.Modify<ChallengeData>(DataKey, data => data.DailyIds = RollDailyIds());
+        store.Modify<ChallengeData>(DataKey, data =>
+        {
+            NormalizePersistentState(data);
+            string today = Today();
+            if (data.DailyDate != today)
+            {
+                data.DailyDate = today;
+                data.DailyRollRevision = 0;
+            }
+            else
+            {
+                data.DailyRollRevision++;
+            }
+            data.DailyRollSeed = CreateDailySeed(today, data.DailyRollRevision);
+            data.DailyIds = RollDailyIds(seed: data.DailyRollSeed);
+            data.CatalogSchemaVersion = ChallengeRegistry.CatalogSchemaVersion;
+            data.DailyCatalogHash = ChallengeRegistry.CatalogHash;
+        });
         store.Save(DataKey);
     }
 
@@ -88,18 +146,24 @@ public static class ChallengeStore
     /// <summary>Total clears for a daily challenge (0 = never cleared). Daily clears are tracked for display only and
     /// never make the challenge unavailable. 每日挑战累计通关次数（0=从未通关）；仅供展示，不会令挑战不可选。</summary>
     public static int GetDailyClearCount(string id) =>
-        Current.DailyClearCounts.TryGetValue(id, out int count) && count > 0 ? count : 0;
+        ChallengeRegistry.TryResolveId(id, out string resolvedId)
+        && Current.DailyClearCounts.TryGetValue(resolvedId, out int count) && count > 0 ? count : 0;
 
     /// <summary>Total clears for a permanent challenge (0 = never cleared). A legacy save that predates counting shows
     /// 1 for a marked entry. 常驻挑战累计通关次数（0=从未通关）。计数功能前的旧存档对已标记条目显示 1。</summary>
     public static int GetPermanentClearCount(string id)
     {
+        if (!ChallengeRegistry.TryResolveId(id, out string resolvedId))
+        {
+            return 0;
+        }
+
         ChallengeData data = Current;
-        if (data.PermanentClearCounts.TryGetValue(id, out int count) && count > 0)
+        if (data.PermanentClearCounts.TryGetValue(resolvedId, out int count) && count > 0)
         {
             return count;
         }
-        return data.PermanentCleared.Contains(id) ? 1 : 0;
+        return data.PermanentCleared.Contains(resolvedId) ? 1 : 0;
     }
 
     /// <summary>Total clears for any registered challenge. 任意已注册挑战的累计通关次数。</summary>
@@ -113,14 +177,24 @@ public static class ChallengeStore
     /// (the per-clear count accumulates). 记录一次常驻挑战通关：把 id 记入通关集合并让计数 +1（通关次数累积）。</summary>
     public static void MarkPermanentCleared(string id)
     {
+        if (!ChallengeRegistry.TryResolveId(id, out string resolvedId)
+            || ChallengeRegistry.Get(resolvedId)?.Kind != ChallengeKind.Permanent)
+        {
+            Entry.Logger.Warn($"ChallengeStore: ignored unknown/non-permanent completion id '{id}'.");
+            return;
+        }
+
         var store = RitsuLibFramework.GetDataStore(Entry.ModId);
         store.Modify<ChallengeData>(DataKey, data =>
         {
-            if (!data.PermanentCleared.Contains(id))
+            NormalizePersistentState(data);
+            if (!data.PermanentCleared.Contains(resolvedId))
             {
-                data.PermanentCleared.Add(id);
+                data.PermanentCleared.Add(resolvedId);
             }
-            data.PermanentClearCounts[id] = data.PermanentClearCounts.TryGetValue(id, out int count) ? count + 1 : 1;
+            data.PermanentClearCounts[resolvedId] = data.PermanentClearCounts.TryGetValue(resolvedId, out int count)
+                ? count + 1
+                : 1;
         });
         store.Save(DataKey);
     }
@@ -129,10 +203,20 @@ public static class ChallengeStore
     /// 记录一次每日挑战通关：仅更新展示次数，每日挑战仍可重复选择。</summary>
     public static void MarkDailyCleared(string id)
     {
+        if (!ChallengeRegistry.TryResolveId(id, out string resolvedId)
+            || ChallengeRegistry.Get(resolvedId)?.Kind != ChallengeKind.Daily)
+        {
+            Entry.Logger.Warn($"ChallengeStore: ignored unknown/non-daily completion id '{id}'.");
+            return;
+        }
+
         var store = RitsuLibFramework.GetDataStore(Entry.ModId);
         store.Modify<ChallengeData>(DataKey, data =>
         {
-            data.DailyClearCounts[id] = data.DailyClearCounts.TryGetValue(id, out int count) ? count + 1 : 1;
+            NormalizePersistentState(data);
+            data.DailyClearCounts[resolvedId] = data.DailyClearCounts.TryGetValue(resolvedId, out int count)
+                ? count + 1
+                : 1;
         });
         store.Save(DataKey);
     }
@@ -140,13 +224,20 @@ public static class ChallengeStore
     /// <summary>Records a clear for the challenge's registered kind. 按挑战注册类型记录一次通关。</summary>
     public static void MarkCleared(string id)
     {
-        if (ChallengeRegistry.IsDaily(id))
+        ChallengeDef? definition = ChallengeRegistry.Get(id);
+        if (definition == null)
         {
-            MarkDailyCleared(id);
+            Entry.Logger.Warn($"ChallengeStore: ignored unknown completion id '{id}'.");
+            return;
+        }
+
+        if (definition.Kind == ChallengeKind.Daily)
+        {
+            MarkDailyCleared(definition.Id);
         }
         else
         {
-            MarkPermanentCleared(id);
+            MarkPermanentCleared(definition.Id);
         }
     }
 
@@ -154,5 +245,51 @@ public static class ChallengeStore
     public static void Persist()
     {
         RitsuLibFramework.GetDataStore(Entry.ModId).Save(DataKey);
+    }
+
+    /// <summary>Repairs legacy aliases, duplicate ids and state left behind by removed challenge definitions.</summary>
+    private static void NormalizePersistentState(ChallengeData data)
+    {
+        data.DailyIds = ChallengeSelectionService.NormalizeRunIds(data.DailyIds).Ids
+            .Where(ChallengeRegistry.IsDaily)
+            .Take(DailySlotCount)
+            .ToList();
+        data.DailyClearCounts = NormalizeCounts(data.DailyClearCounts, ChallengeKind.Daily);
+        data.PermanentClearCounts = NormalizeCounts(data.PermanentClearCounts, ChallengeKind.Permanent);
+        data.PermanentCleared = ChallengeSelectionService.NormalizeRunIds(data.PermanentCleared).Ids
+            .Where(id => ChallengeRegistry.Get(id)?.Kind == ChallengeKind.Permanent)
+            .ToList();
+
+        foreach (string id in data.PermanentClearCounts.Keys)
+        {
+            if (!data.PermanentCleared.Contains(id))
+            {
+                data.PermanentCleared.Add(id);
+            }
+        }
+    }
+
+    private static Dictionary<string, int> NormalizeCounts(Dictionary<string, int>? source, ChallengeKind kind)
+    {
+        var normalized = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach ((string rawId, int count) in source ?? new Dictionary<string, int>())
+        {
+            if (count <= 0 || !ChallengeRegistry.TryResolveId(rawId, out string id)
+                || ChallengeRegistry.Get(id)?.Kind != kind)
+            {
+                continue;
+            }
+
+            normalized[id] = normalized.GetValueOrDefault(id) + count;
+        }
+
+        return normalized;
+    }
+
+    private static int CreateDailySeed(string date, int revision)
+    {
+        byte[] bytes = SHA256.HashData(Encoding.UTF8.GetBytes(
+            $"{date}|{ChallengeRegistry.CatalogHash}|{revision}"));
+        return BinaryPrimitives.ReadInt32LittleEndian(bytes);
     }
 }

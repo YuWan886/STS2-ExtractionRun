@@ -25,6 +25,21 @@
         <NoWarn>$(NoWarn);MSB3270;STS001;STS003</NoWarn>
     </PropertyGroup>
 
+    <!-- Match a plain development build to the installed game. Variant builds always pass VariantTarget explicitly. -->
+    <PropertyGroup Condition="'$(VariantTarget)' == '' and Exists('$(Sts2Path)/release_info.json')">
+        <InstalledSts2Version>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(Sts2Path)/release_info.json')), '&quot;version&quot;\s*:\s*&quot;v?([^&quot;]+)&quot;').Groups[1].Value)</InstalledSts2Version>
+    </PropertyGroup>
+    <PropertyGroup>
+        <EffectiveVariantTarget Condition="'$(VariantTarget)' != ''">$(VariantTarget)</EffectiveVariantTarget>
+        <EffectiveVariantTarget Condition="'$(EffectiveVariantTarget)' == ''">$(InstalledSts2Version)</EffectiveVariantTarget>
+    </PropertyGroup>
+
+    <!-- 0.111.0 added CardPlay to AbstractModel.ModifyDamageMultiplicative and replaced CardCreationOptions'
+         custom-pool APIs with WithFilter. -->
+    <PropertyGroup Condition="'$(EffectiveVariantTarget)' != '0.107.1'">
+        <DefineConstants>$(DefineConstants);STS2_DAMAGE_HOOK_HAS_CARD_PLAY;STS2_CARD_CREATION_OPTIONS_HAS_WITH_FILTER</DefineConstants>
+    </PropertyGroup>
+
     <ItemGroup Condition="Exists('$(Sts2DataDir)')">
         <Reference Include="0Harmony">
             <HintPath>$(Sts2DataDir)/0Harmony.dll</HintPath>

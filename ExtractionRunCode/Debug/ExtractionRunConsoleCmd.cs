@@ -126,8 +126,8 @@ public sealed class ExtractionRunConsoleCmd : AbstractConsoleCmd
         ChallengeStore.RefreshDaily();
 
         // A still-selected daily that fell out of the new pool is dropped from the draft, so a run never carries an
-        // id that isn't on offer (ComputeEffects would silently ignore it — confusing). 把被换出池子的已选每日从草稿移除，
-        // 开跑不会带一个不在池中的 id（ComputeEffects 会静默忽略它——令人困惑）。
+        // id that isn't on offer (the centralized selection service rejects it). 把被换出池子的已选每日从草稿移除，
+        // 开跑不会带一个不在池中的 id（选择服务会拒绝它）。
         WarehouseHubScreen.Current?.RemovePendingChallengesNotInDailyPool();
         WarehouseHubScreen.Current?.RefreshForExternalMutation();
         return new CmdResult(true, "已刷新每日挑战。");

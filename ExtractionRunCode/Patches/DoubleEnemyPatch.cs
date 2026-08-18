@@ -30,12 +30,13 @@ public static class DoubleEnemyPatch
 
         RunState? state = RunManager.Instance?.State;
         ExtractionModifier? modifier = state?.Modifiers.OfType<ExtractionModifier>().FirstOrDefault();
-        if (modifier?.Effects.HasFlag(ChallengeEffects.DoubleEnemy) != true)
+        ChallengeRuntime? challenges = modifier?.Challenges;
+        if (challenges == null || challenges.EnemyHpMultiplier == 1m)
         {
             return;
         }
 
-        __result.SetMaxHpInternal(__result.MaxHp * 2);
+        __result.SetMaxHpInternal(challenges.ScaleEnemyMaxHp(__result.MaxHp));
         __result.SetCurrentHpInternal(__result.MaxHp);
     }
 }

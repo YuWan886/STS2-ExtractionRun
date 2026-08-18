@@ -18,6 +18,9 @@ public sealed partial class WarehouseHubScreen
 {
     private enum ChallengeEntryLayout { Daily, Permanent }
 
+    private LineEdit _challengeSearchEdit = null!;
+    private OptionButton _challengeTagFilter = null!;
+
     private Control BuildChallengePage()
     {
         var page = new VBoxContainer
@@ -25,6 +28,8 @@ public sealed partial class WarehouseHubScreen
             SizeFlagsVertical = Control.SizeFlags.ExpandFill,
         };
         page.AddThemeConstantOverride("separation", 16);
+
+        page.AddChild(BuildChallengeFilterBar());
 
         var columns = new HBoxContainer
         {
@@ -42,6 +47,34 @@ public sealed partial class WarehouseHubScreen
         _challengeHintLabel = hint;
 
         return page;
+    }
+
+    private Control BuildChallengeFilterBar()
+    {
+        var row = new HBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        row.AddThemeConstantOverride("separation", 10);
+
+        _challengeSearchEdit = new LineEdit
+        {
+            PlaceholderText = ExtractionLocalization.ChallengeSearchPlaceholderText(),
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(260f, 38f),
+        };
+        _challengeSearchEdit.TextChanged += _ => RefreshChallengePage();
+        row.AddChild(_challengeSearchEdit);
+
+        _challengeTagFilter = new OptionButton
+        {
+            CustomMinimumSize = new Vector2(150f, 38f),
+        };
+        _challengeTagFilter.AddItem(ExtractionLocalization.ChallengeFilterAllText());
+        foreach (ChallengeTag tag in Enum.GetValues<ChallengeTag>())
+        {
+            _challengeTagFilter.AddItem(ExtractionLocalization.ChallengeTagText(tag));
+        }
+        _challengeTagFilter.ItemSelected += _ => RefreshChallengePage();
+        row.AddChild(_challengeTagFilter);
+        return row;
     }
 
     /// <summary>Left-side daily challenges: larger vertical cards for the day's three selectable runs.
@@ -98,6 +131,7 @@ public sealed partial class WarehouseHubScreen
     private void RefreshChallengePage()
     {
         ChallengeStore.EnsureDailyRolled();
+        NormalizePendingChallengeDraft();
         ClearChildren(_dailyChallengeList);
         ClearChildren(_permanentChallengeList);
 
@@ -105,7 +139,7 @@ public sealed partial class WarehouseHubScreen
         foreach (string id in data.DailyIds)
         {
             ChallengeDef? def = ChallengeRegistry.Get(id);
-            if (def != null)
+            if (def != null && MatchesChallengeFilter(def))
             {
                 _dailyChallengeList.AddChild(BuildChallengeEntry(def,
                     clearCount: ChallengeStore.GetClearCount(def.Id),
@@ -115,6 +149,10 @@ public sealed partial class WarehouseHubScreen
 
         foreach (ChallengeDef def in ChallengeRegistry.Permanents)
         {
+            if (!MatchesChallengeFilter(def))
+            {
+                continue;
+            }
             _permanentChallengeList.AddChild(BuildChallengeEntry(def,
                 clearCount: ChallengeStore.GetClearCount(def.Id),
                 ChallengeEntryLayout.Permanent));
@@ -123,6 +161,20 @@ public sealed partial class WarehouseHubScreen
         _challengeHintLabel.Text = _pendingChallenges.Count == 0
             ? ExtractionLocalization.ChallengeNoneHintText()
             : ExtractionLocalization.ChallengeSelectedHintText(_pendingChallenges.Count);
+    }
+
+    private bool MatchesChallengeFilter(ChallengeDef definition)
+    {
+        if (_challengeTagFilter.Selected > 0
+            && !definition.Tags.Contains((ChallengeTag)(_challengeTagFilter.Selected - 1)))
+        {
+            return false;
+        }
+
+        string query = _challengeSearchEdit.Text.Trim();
+        return query.Length == 0
+            || ExtractionLocalization.ChallengeTitle(definition.Id).Contains(query, StringComparison.OrdinalIgnoreCase)
+            || ExtractionLocalization.ChallengeDesc(definition.Id).Contains(query, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -134,9 +186,9 @@ public sealed partial class WarehouseHubScreen
     {
         foreach (ExtractionItemTiles.CardGroup g in WarehouseCache.Cards)
         {
-            if (g.Rep.Id is { } id
-                && ModelDb.GetByIdOrNull<CardModel>(id) is { } m
-                && ChallengeRegistry.IsStrikeCard(m))
+                if (g.Rep.Id is { } id
+                    && ModelDb.GetByIdOrNull<CardModel>(id) is { } m
+                    && m.Tags.Contains(CardTag.Strike))
             {
                 return false;
             }
@@ -151,13 +203,14 @@ public sealed partial class WarehouseHubScreen
         // Daily challenges are re-selectable — no completion gate (grill-locked). The only disabled state is the
         // STRIKE_ONLY un-carryable gate, and the permanent list keeps its cleared ✓.
         // 每日挑战可重复选择——无完成闸门（grill 锁定）。禁用态仅剩打击牌不可选门槛；常驻列表保留通关 ✓。
-        bool disabled = def.Effects.HasFlag(ChallengeEffects.StrikeOnly) && IsStrikeOnlyUnavailable();
+        bool disabled = ChallengeRuntime.FromDefinition(def).HasCarryTag(CardTag.Strike) && IsStrikeOnlyUnavailable();
         string state = clearCount > 0 ? ExtractionLocalization.ChallengeClearCountText(clearCount) : "";
 
         var entry = new Control
         {
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
-            CustomMinimumSize = new Vector2(0f, layout == ChallengeEntryLayout.Daily ? 130f : 112f),
+            CustomMinimumSize = new Vector2(0f, (layout == ChallengeEntryLayout.Daily ? 130f : 112f)
+                + Math.Max(0, def.Rewards.Count - 1) * 28f),
         };
         var panel = new PanelContainer();
         panel.SetAnchorsPreset(Control.LayoutPreset.FullRect);
@@ -247,6 +300,8 @@ public sealed partial class WarehouseHubScreen
             var rewardLabel = MakeLabel(reward);
             rewardLabel.AddThemeColorOverride("font_color", ExtractionTheme.GoldChipText);
             rewardLabel.AddThemeFontSizeOverride("font_size", layout == ChallengeEntryLayout.Daily ? 18 : 16);
+            rewardLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            rewardLabel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
             rewardLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
             rewardRow.AddChild(rewardLabel);
             box.AddChild(rewardRow);
@@ -277,9 +332,15 @@ public sealed partial class WarehouseHubScreen
     {
         // The STRIKE_ONLY gate is enforced at the UI (disabled tile) and here as defense-in-depth: a challenge that
         // cannot be taken must never enter the draft. 打击牌门槛在 UI（禁用瓦片）与本处双重把关：不可选的挑战绝不进草稿。
+        if (!ChallengeRegistry.TryResolveId(id, out string resolvedId))
+        {
+            return;
+        }
+
+        id = resolvedId;
         if (!_pendingChallenges.Contains(id)
             && ChallengeRegistry.Get(id) is { } def
-            && def.Effects.HasFlag(ChallengeEffects.StrikeOnly)
+            && ChallengeRuntime.FromDefinition(def).HasCarryTag(CardTag.Strike)
             && IsStrikeOnlyUnavailable())
         {
             return;
@@ -291,7 +352,16 @@ public sealed partial class WarehouseHubScreen
         }
         else
         {
-            _pendingChallenges.Add(id);
+            ChallengeSelectionResult selection = ChallengeSelectionService.NormalizeHubDraft(
+                _pendingChallenges.Append(id), ChallengeStore.Current.DailyIds);
+            if (selection.IsRejected(id))
+            {
+                Entry.Logger.Warn($"WarehouseHub: rejected challenge selection '{id}'.");
+                return;
+            }
+
+            _pendingChallenges.Clear();
+            _pendingChallenges.AddRange(selection.Ids);
         }
 
         ClampDraftToChallenges();
@@ -303,7 +373,9 @@ public sealed partial class WarehouseHubScreen
     /// 换出的已选每日——开跑不会带一个不在池中的 id。</summary>
     public void RemovePendingChallengesNotInDailyPool()
     {
-        if (_pendingChallenges.RemoveAll(id => ChallengeRegistry.IsDaily(id) && !ChallengeStore.ContainsDaily(id)) > 0)
+        int previousCount = _pendingChallenges.Count;
+        NormalizePendingChallengeDraft();
+        if (_pendingChallenges.Count != previousCount)
         {
             ClampDraftToChallenges();
         }
@@ -311,43 +383,66 @@ public sealed partial class WarehouseHubScreen
         RefreshChallengePage();
     }
 
+    private void NormalizePendingChallengeDraft()
+    {
+        ChallengeSelectionResult selection = ChallengeSelectionService.NormalizeHubDraft(
+            _pendingChallenges, ChallengeStore.Current.DailyIds);
+        if (_pendingChallenges.SequenceEqual(selection.Ids))
+        {
+            return;
+        }
+
+        if (selection.RejectedIds.Count > 0)
+        {
+            Entry.Logger.Warn("WarehouseHub: removed invalid/stale challenge draft entries: " +
+                              string.Join(", ", selection.RejectedIds));
+        }
+        _pendingChallenges.Clear();
+        _pendingChallenges.AddRange(selection.Ids);
+    }
+
     private static string ChallengeRewardText(ChallengeDef def)
     {
-        if (def.DoublesReward)
+        return string.Join("\n", def.Rewards.Select(ChallengeRewardActionText));
+    }
+
+    private static string ChallengeRewardActionText(ChallengeRewardAction action)
+    {
+        if (action is DoubleReturnedCarryRewardAction)
         {
             return ExtractionLocalization.ChallengeRewardDoubleText();
         }
 
-        if (def.RewardCardIds is { Length: > 0 } fixedIds)
+        if (action is GrantFixedCardsRewardAction fixedCards)
         {
-            CardModel? fixedCard = ModelDb.GetByIdOrNull<CardModel>(new ModelId(ModelId.SlugifyCategory<CardModel>(), fixedIds[0]));
-            string name = fixedCard?.Title ?? fixedIds[0];
-            return ExtractionLocalization.ChallengeRewardFixedText(def.RewardCount, name);
+            CardModel? fixedCard = ModelDb.GetByIdOrNull<CardModel>(new ModelId(ModelId.SlugifyCategory<CardModel>(), fixedCards.CardIds[0]));
+            string name = fixedCard?.Title ?? fixedCards.CardIds[0];
+            return ExtractionLocalization.ChallengeRewardFixedText(fixedCards.Count, name);
         }
 
-        if (def.AllCardsReward)
+        if (action is GrantAllCharacterCardsRewardAction)
         {
             return ExtractionLocalization.ChallengeRewardAllCardsText();
         }
 
-        if (def.RewardRelicRarity is RelicRarity relicRarity)
+        if (action is GrantRelicRarityRewardAction relicsByRarity)
         {
             // ONE_REST grants Ancient relics — hardcode the native 「先古」 term (matches the game's relic_collection
             // naming; the generic rarity label would say 远古). 先古遗物专用文案——对齐游戏「先古」译名。
-            return relicRarity == RelicRarity.Ancient
-                ? ExtractionLocalization.ChallengeRewardAncientRelicsText(def.RewardCount)
-                : ExtractionLocalization.ChallengeRewardRandomRelicText(def.RewardCount,
-                    ExtractionLocalization.FilterRarityLabel(relicRarity.ToString().ToLowerInvariant()));
+            return relicsByRarity.Rarity == RelicRarity.Ancient
+                ? ExtractionLocalization.ChallengeRewardAncientRelicsText(relicsByRarity.Count)
+                : ExtractionLocalization.ChallengeRewardRandomRelicText(relicsByRarity.Count,
+                    ExtractionLocalization.FilterRarityLabel(relicsByRarity.Rarity.ToString().ToLowerInvariant()));
         }
 
-        if (def.RewardRarity is CardRarity rarity)
+        if (action is GrantCardRarityRewardAction cardsByRarity)
         {
-            string rarityName = ExtractionLocalization.FilterRarityLabel(rarity.ToString().ToLowerInvariant());
-            return def.RewardCount > 0
-                ? ExtractionLocalization.ChallengeRewardRandomText(def.RewardCount, rarityName)
+            string rarityName = ExtractionLocalization.FilterRarityLabel(cardsByRarity.Rarity.ToString().ToLowerInvariant());
+            return cardsByRarity.Count > 0
+                ? ExtractionLocalization.ChallengeRewardRandomText(cardsByRarity.Count, rarityName)
                 : ExtractionLocalization.ChallengeRewardAllText(rarityName);
         }
 
-        return "";
+        throw new InvalidOperationException($"Unknown challenge reward action: {action.GetType().Name}");
     }
 }

@@ -343,6 +343,10 @@ public static class ExtractionLocalization
     public static string ChallengeRewardFixedText(int count, string name) =>
         Formatted("EXTRACTION_RUN.challenge.reward.fixed", count, name);
     public static string ChallengeSummaryText(string joined) => Formatted("EXTRACTION_RUN.challenge.summary", joined);
+    public static string ChallengeSearchPlaceholderText() => Text("EXTRACTION_RUN.challenge.search");
+    public static string ChallengeFilterAllText() => Text("EXTRACTION_RUN.challenge.filter.all");
+    public static string ChallengeTagText(ChallengeTag tag) =>
+        Text("EXTRACTION_RUN.challenge.tag." + tag.ToString().ToLowerInvariant());
     public static string SectionCardsText() => Text("EXTRACTION_RUN.hub.cards");
     public static string SectionRelicsText() => Text("EXTRACTION_RUN.hub.relics");
     public static string SectionPotionsText() => Text("EXTRACTION_RUN.hub.potions");

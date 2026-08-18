@@ -61,8 +61,8 @@ public static class ExtractionRunEnd
             }
 
             ExtractionModifier? modifier = state.Modifiers.OfType<ExtractionModifier>().FirstOrDefault();
-            ChallengeEffects effects = modifier?.Effects ?? ChallengeEffects.None;
             IReadOnlyList<string> challengeIds = modifier?.ActiveChallengeIds ?? Array.Empty<string>();
+            ChallengeRuntime challenges = modifier?.Challenges ?? ChallengeRuntime.FromIds(Array.Empty<string>());
 
             bool success = evt.IsVictory;
             var result = new ExtractionSettlementResult();
@@ -71,7 +71,7 @@ public static class ExtractionRunEnd
             {
                 result.Kind = ExtractionSettlementKind.Victory;
                 result.Success = true;
-                SettleSuccess(result, me, effects, challengeIds);
+                SettleSuccess(result, me, challenges, challengeIds);
             }
             else if (ExtractionPointFlow.IsExtractionChosen)
             {
@@ -97,9 +97,9 @@ public static class ExtractionRunEnd
     }
 
     private static void SettleSuccess(ExtractionSettlementResult result, Player me,
-        ChallengeEffects effects, IReadOnlyList<string> challengeIds)
+        ChallengeRuntime challenges, IReadOnlyList<string> challengeIds)
     {
-        Entry.Logger.Info($"SettleSuccess: effects={effects}, challengeIds=[{string.Join(", ", challengeIds)}]");
+        Entry.Logger.Info($"SettleSuccess: challengeIds=[{string.Join(", ", challengeIds)}]");
         CarryConfig carried = ExtractionRunData.Carry.Get(me);
         WarehouseStore.BackfillCarryDurability(carried);
         bool durability = WarehouseStore.IsDurabilityEnabled;
@@ -123,9 +123,9 @@ public static class ExtractionRunEnd
 
         // HP_ONE reward: every healthy returned carried copy is duplicated at full durability (a broken one is not —
         // 碎 = 真碎) and the deposited gold doubles. 翻倍奖励：每份健康带回的携带副本补一张满耐久副本（战损不补），金币翻倍。
-        Entry.Logger.Info($"HP_ONE doubling check: flag={effects.HasFlag(ChallengeEffects.HpOne)}, " +
-                          $"returnedCards={returnedCardCounts.Count}, returnedRelics={returnedRelicCounts.Count}");
-        if (effects.HasFlag(ChallengeEffects.HpOne))
+        Entry.Logger.Info($"Challenge doubling check: flag={challenges.DoublesReturnedCarry}, " +
+                           $"returnedCards={returnedCardCounts.Count}, returnedRelics={returnedRelicCounts.Count}");
+        if (challenges.DoublesReturnedCarry)
         {
             foreach (KeyValuePair<ModelId, int> kvp in returnedCardCounts)
             {
@@ -188,10 +188,9 @@ public static class ExtractionRunEnd
     }
 
     /// <summary>
-    /// Victory-only challenge rewards: rarity grants (all-of-rarity, or N random), fixed-card grants (STRIKE_ONLY),
-    /// + clear-count updates (daily challenges remain re-selectable — their count is display-only). Never reached from
-    /// the extraction-point/defeat paths. 仅在胜利结算发放的挑战奖励：稀有度发放（各一张或随机 N 张）、固定卡发放
-    /// （STRIKE_ONLY）+ 通关次数更新（每日挑战可重复，次数仅供展示）。
+    /// Victory-only challenge rewards: each selected definition executes its ordered reward actions, then records its
+    /// clear count. Never reached from the extraction-point/defeat paths. 仅在胜利结算发放的挑战奖励：每条选中挑战按顺序
+    /// 执行奖励动作，随后记录通关次数。
     /// 撤离点/失败路径到不了这里。
     /// </summary>
     private static void ApplyChallengeRewards(ExtractionSettlementResult result, Player me, IReadOnlyList<string> challengeIds)
@@ -199,31 +198,59 @@ public static class ExtractionRunEnd
         foreach (string id in challengeIds)
         {
             ChallengeDef? def = ChallengeRegistry.Get(id);
-            if (def?.RewardCardIds is { Length: > 0 } fixedIds)
+            if (def == null)
             {
-                (List<WarehouseCard> cards, _) = WarehouseStore.GrantFixedCards(fixedIds, def.RewardCount);
-                result.Cards.AddRange(cards);
+                continue;
             }
-            else if (def?.AllCardsReward == true)
+
+            foreach (ChallengeRewardAction action in def.Rewards)
             {
-                (List<WarehouseCard> cards, _) = WarehouseStore.GrantAllCardsReward(me.Character);
-                result.Cards.AddRange(cards);
-            }
-            else if (def?.RewardRelicRarity is RelicRarity relicRarity)
-            {
-                (_, List<WarehouseRelic> relics) = WarehouseStore.GrantRelicRarityReward(me.Character, relicRarity, def.RewardCount);
-                result.Relics.AddRange(relics);
-            }
-            else if (def?.RewardRarity is CardRarity rarity)
-            {
-                (List<WarehouseCard> cards, _) = WarehouseStore.GrantRarityReward(me.Character, rarity, def.RewardCount);
-                result.Cards.AddRange(cards);
+                ApplyChallengeRewardAction(result, me, action);
             }
         }
 
         foreach (string id in challengeIds.Distinct())
         {
             ChallengeStore.MarkCleared(id);
+        }
+    }
+
+    private static void ApplyChallengeRewardAction(ExtractionSettlementResult result, Player player,
+        ChallengeRewardAction action)
+    {
+        switch (action)
+        {
+            case DoubleReturnedCarryRewardAction:
+                // This action is applied before Deposit because it mutates returned copies and gold.
+                return;
+            case GrantFixedCardsRewardAction fixedCards:
+            {
+                (List<WarehouseCard> cards, _) = WarehouseStore.GrantFixedCards(fixedCards.CardIds.ToArray(), fixedCards.Count);
+                result.Cards.AddRange(cards);
+                return;
+            }
+            case GrantAllCharacterCardsRewardAction:
+            {
+                (List<WarehouseCard> cards, _) = WarehouseStore.GrantAllCardsReward(player.Character);
+                result.Cards.AddRange(cards);
+                return;
+            }
+            case GrantRelicRarityRewardAction relicsByRarity:
+            {
+                (_, List<WarehouseRelic> relics) = WarehouseStore.GrantRelicRarityReward(player.Character,
+                    relicsByRarity.Rarity, relicsByRarity.Count);
+                result.Relics.AddRange(relics);
+                return;
+            }
+            case GrantCardRarityRewardAction cardsByRarity:
+            {
+                (List<WarehouseCard> cards, _) = WarehouseStore.GrantRarityReward(player.Character,
+                    cardsByRarity.Rarity, cardsByRarity.Count);
+                result.Cards.AddRange(cards);
+                return;
+            }
+            default:
+                throw new InvalidOperationException($"Unknown challenge reward action: {action.GetType().Name}");
         }
     }
 

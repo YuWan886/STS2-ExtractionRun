@@ -10,6 +10,18 @@ namespace ExtractionRun.Data;
 /// </summary>
 public sealed class ChallengeData
 {
+    /// <summary>Catalog schema used when this profile state was last normalized.</summary>
+    public int CatalogSchemaVersion { get; set; }
+
+    /// <summary>Catalog digest that produced the persisted daily pool.</summary>
+    public string DailyCatalogHash { get; set; } = "";
+
+    /// <summary>Same-day refresh sequence; incrementing it deliberately produces a new deterministic daily roll.</summary>
+    public int DailyRollRevision { get; set; }
+
+    /// <summary>Persisted deterministic seed for the displayed daily pool.</summary>
+    public int DailyRollSeed { get; set; }
+
     /// <summary>Local date (yyyy-MM-dd) the current daily pool was rolled for. 当前每日池所属的本地日期。</summary>
     public string DailyDate { get; set; } = "";
 

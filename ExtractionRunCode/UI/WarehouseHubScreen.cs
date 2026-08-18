@@ -1378,7 +1378,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         bool sourceOn = selSources.Count > 0;
         string query = _query;
         CarryBudget budget = CarryBudget.FromSettings();
-        bool emptyCarry = ChallengeRegistry.HasEffect(_pendingChallenges, ChallengeEffects.EmptyCarry);
+        bool emptyCarry = PendingChallengeRuntime.StartsEmpty;
 
         int filtered = 0;
         foreach (ExtractionItemTiles.RelicGroup g in varieties)
@@ -1436,7 +1436,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         bool rarityOn = selRarities.Count > 0;
         bool sourceOn = selSources.Count > 0;
         string query = _query;
-        bool emptyCarry = ChallengeRegistry.HasEffect(_pendingChallenges, ChallengeEffects.EmptyCarry);
+        bool emptyCarry = PendingChallengeRuntime.StartsEmpty;
 
         int filtered = 0;
         foreach (ExtractionItemTiles.PotionGroup g in varieties)
@@ -1720,6 +1720,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
 
     private void StartRun()
     {
+        NormalizePendingChallengeDraft();
         // Defense-in-depth: a stale draft is re-clamped to the current budget first (should be a no-op — the open-time
         // clamp + the guarded adds already kept it in bounds), then never launch a 0-card run.
         int dropped = CarryCapacity.ClampToBudget(_carry, CarryBudget.FromSettings());
@@ -1836,7 +1837,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
     /// and supplies the starter kit. 是否可继续：携带非空；或携带为空但已不可能带任何卡（初始牌组兜底可玩）；或选中 EMPTY_CARRY
     /// 挑战（要求空携带并自带起手包）。</summary>
     private bool CanProceed() =>
-        ChallengeRegistry.HasEffect(_pendingChallenges, ChallengeEffects.EmptyCarry)
+        PendingChallengeRuntime.StartsEmpty
         || _carry.Cards.Count > 0
         || !CanCarryAnyCards;
 
@@ -1845,6 +1846,7 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         get
         {
             CarryBudget budget = CarryBudget.FromSettings();
+            ChallengeRuntime challenges = PendingChallengeRuntime;
             if (budget.UsesCapacity)
             {
                 // Possible iff some carryable card's weight fits the whole pool (weights ≥ 1, so capacity ≥ 1 usually
@@ -1855,6 +1857,9 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
                 }
 
                 int cheapest = _warehouse.Cards
+                    .Where(c => c.Card.Id is ModelId id
+                        && ModelDb.GetByIdOrNull<CardModel>(id) is { } card
+                        && challenges.AllowsCarryCard(card))
                     .Select(c => CarryCapacity.WeightForCard(c.Card.Id))
                     .Where(w => w > 0)
                     .DefaultIfEmpty(int.MaxValue)
@@ -1862,22 +1867,23 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
                 return cheapest <= budget.Capacity;
             }
 
-            return budget.MaxCards > 0 && _warehouse.Cards.Count > 0;
+            return budget.MaxCards > 0 && _warehouse.Cards.Any(c => c.Card.Id is ModelId id
+                && ModelDb.GetByIdOrNull<CardModel>(id) is { } card
+                && challenges.AllowsCarryCard(card));
         }
     }
 
     // ----- Challenge-constraint helpers 挑战约束助手 -----
 
     /// <summary>
-    /// Clamps the carry draft to the selected challenges: EMPTY_CARRY empties everything (gold included), BASIC_COMMON
-    /// drops cards above Basic/Common. The authoritative clamp lives in <c>ExtractionModifier.AfterRunCreated</c> — this
-    /// is the hub-side mirror so the UI never shows an un-injectable carry. 把携带草稿钳制到所选挑战：EMPTY_CARRY 清空全部
-    /// （含金币）、BASIC_COMMON 剔除基础/普通以上卡。权威钳制在 modifier 注入处，此处为界面侧镜像。
+    /// Projects the carry draft through the selected parameterized rules. The authoritative projection lives in
+    /// <c>ExtractionModifier.AfterRunCreated</c>; this is the hub-side mirror so the UI never shows an un-injectable
+    /// carry. 将携带草稿投影到选中的参数化规则；权威校验仍在 modifier 注入处，本处仅镜像 UI。
     /// </summary>
     private void ClampDraftToChallenges()
     {
-        ChallengeEffects effects = ChallengeRegistry.ComputeEffects(_pendingChallenges);
-        if (effects.HasFlag(ChallengeEffects.EmptyCarry))
+        ChallengeRuntime challenges = PendingChallengeRuntime;
+        if (challenges.StartsEmpty)
         {
             _carry.Cards.Clear();
             _carry.Relics.Clear();
@@ -1887,50 +1893,35 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
             return;
         }
 
-        if (effects.HasFlag(ChallengeEffects.BasicCommonOnly) && _carry.Cards.Count > 0)
+        if ((challenges.HasCarryRarityFilter || challenges.HasCarryTagFilter) && _carry.Cards.Count > 0)
         {
             _carry.Cards.RemoveAll(wc =>
                 wc.Card.Id == null ||
-                ModelDb.GetByIdOrNull<CardModel>(wc.Card.Id) is { } m && !ChallengeRegistry.IsBasicCommonRarity(m));
-        }
-
-        // StrikeOnly: non-Strike carried cards are dropped from the draft (the run-side injector enforces the same
-        // filter as defense-in-depth). 只带打击牌：剔除携带中的非打击卡（局内注入器同样过滤作纵深防御）。
-        if (effects.HasFlag(ChallengeEffects.StrikeOnly) && _carry.Cards.Count > 0)
-        {
-            _carry.Cards.RemoveAll(wc =>
-                wc.Card.Id == null ||
-                ModelDb.GetByIdOrNull<CardModel>(wc.Card.Id) is { } m && !ChallengeRegistry.IsStrikeCard(m));
+                ModelDb.GetByIdOrNull<CardModel>(wc.Card.Id) is { } m && !challenges.AllowsCarryCard(m));
         }
     }
 
     /// <summary>Whether a card group's add-tile may be pressed under the selected challenges. 该卡牌瓦片在所选挑战下可否添加。</summary>
     private bool CanCarryCardTile(ExtractionItemTiles.CardGroup g)
     {
-        ChallengeEffects effects = ChallengeRegistry.ComputeEffects(_pendingChallenges);
-        if (effects.HasFlag(ChallengeEffects.EmptyCarry))
+        ChallengeRuntime challenges = PendingChallengeRuntime;
+        if (challenges.StartsEmpty)
         {
             return false;
         }
 
-        if (effects.HasFlag(ChallengeEffects.BasicCommonOnly)
+        if ((challenges.HasCarryRarityFilter || challenges.HasCarryTagFilter)
             && (g.Rep.Id is not ModelId id
-                || ModelDb.GetByIdOrNull<CardModel>(id) is not { } m
-                || !ChallengeRegistry.IsBasicCommonRarity(m)))
-        {
-            return false;
-        }
-
-        if (effects.HasFlag(ChallengeEffects.StrikeOnly)
-            && (g.Rep.Id is not ModelId strikeId
-                || ModelDb.GetByIdOrNull<CardModel>(strikeId) is not { } strikeModel
-                || !ChallengeRegistry.IsStrikeCard(strikeModel)))
+                || ModelDb.GetByIdOrNull<CardModel>(id) is not { } card
+                || !challenges.AllowsCarryCard(card)))
         {
             return false;
         }
 
         return true;
     }
+
+    private ChallengeRuntime PendingChallengeRuntime => ChallengeRuntime.FromIds(_pendingChallenges);
 
     private string ChallengeSummaryText()
     {
