@@ -1,7 +1,5 @@
 using MegaCrit.Sts2.Core.Context;
-using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Players;
-using MegaCrit.Sts2.Core.Entities.Relics;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Saves.Runs;
@@ -242,6 +240,16 @@ public static class ExtractionRunEnd
                 result.Relics.AddRange(relics);
                 return;
             }
+            case GrantFixedRelicsRewardAction fixedRelics:
+            {
+                (_, List<WarehouseRelic> relics) = WarehouseStore.GrantFixedRelics(
+                    fixedRelics.RelicIds.ToArray(), fixedRelics.Count);
+                result.Relics.AddRange(relics);
+                return;
+            }
+            case GrantGoldRewardAction gold:
+                result.Gold += WarehouseStore.GrantGold(gold.Amount);
+                return;
             case GrantCardRarityRewardAction cardsByRarity:
             {
                 (List<WarehouseCard> cards, _) = WarehouseStore.GrantRarityReward(player.Character,

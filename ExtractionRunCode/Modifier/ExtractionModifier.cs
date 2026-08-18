@@ -1,11 +1,14 @@
 using MegaCrit.Sts2.Core.Combat;
+using MegaCrit.Sts2.Core.Commands;
 using MegaCrit.Sts2.Core.Entities.Ascension;
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Creatures;
 using MegaCrit.Sts2.Core.Entities.Players;
+using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Map;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Models.Powers;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Saves.Runs;
 using MegaCrit.Sts2.Core.ValueProps;
@@ -317,18 +320,7 @@ public sealed class ExtractionModifier : ModifierModel
             // machine). 诅咒挑战：随机 2 张诅咒入牌组，用 run RNG 抽取（所有机器同一结果）。
             if (challenges.RandomCurseCount > 0)
             {
-                List<CardModel> cursePool = ModelDb.AllCards
-                    .Where(c => c.Rarity == CardRarity.Curse)
-                    .Distinct()
-                    .ToList();
-                for (int i = 0; i < challenges.RandomCurseCount && cursePool.Count > 0; i++)
-                {
-                    CardModel curseTemplate = cursePool[runState.Rng.Niche.NextInt(cursePool.Count)];
-                    CardModel curse = curseTemplate.ToMutable();
-                    curse.FloorAddedToDeck = 1;
-                    runState.AddCard(curse, player);
-                    player.Deck.AddInternal(curse, silent: true);
-                }
+                AddRandomCurses(runState, player, challenges.RandomCurseCount);
 
                 Entry.Logger.Warn($"ExtractionModifier: player {player.NetId} challenge rules added " +
                                   $"{challenges.RandomCurseCount} curse(s) to the deck.");
@@ -356,6 +348,110 @@ public sealed class ExtractionModifier : ModifierModel
     {
         // Reloading a saved extraction run must NOT re-inject or re-consume — the deck is already in the save and the
         // carried items were consumed when the run first started. Intentional no-op.
+    }
+
+    /// <summary>Applies the per-act curse rule only after an act transition; it never replays on a save load.</summary>
+    public override Task AfterActEntered()
+    {
+        int curseCount = Challenges.RandomCursesPerAct;
+        if (curseCount <= 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        foreach (Player player in RunState.Players)
+        {
+            AddRandomCurses(RunState, player, curseCount);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Deals the hand-pressure challenge damage before the engine flushes player hands.</summary>
+    public override async Task BeforeSideTurnEnd(PlayerChoiceContext choiceContext, CombatSide side,
+        IEnumerable<Creature> participants)
+    {
+        await base.BeforeSideTurnEnd(choiceContext, side, participants);
+        int damagePerCard = Challenges.HandEndDamagePerCard;
+        if (side != CombatSide.Player || damagePerCard <= 0)
+        {
+            return;
+        }
+
+        HashSet<Creature> endingCreatures = participants.ToHashSet();
+        foreach (Player player in RunState.Players.Where(player => endingCreatures.Contains(player.Creature)
+            && player.Creature.IsAlive))
+        {
+            int cardsInHand = PileType.Hand.GetPile(player).Cards.Count;
+            if (cardsInHand > 0)
+            {
+                await CreatureCmd.Damage(choiceContext, player.Creature, cardsInHand * damagePerCard,
+                    ValueProp.Unpowered | ValueProp.Move, null, null);
+            }
+        }
+    }
+
+    /// <summary>Blocks an eleventh manual card play using the engine's normal playability hook.</summary>
+    public override bool ShouldPlay(CardModel card, AutoPlayType autoPlayType)
+    {
+        if (!base.ShouldPlay(card, autoPlayType))
+        {
+            return false;
+        }
+
+        int? limit = Challenges.CardPlayLimitPerTurn;
+        return limit == null || card.CombatState == null || CombatManager.Instance.History.CardPlaysStarted.Count(entry =>
+            entry.CardPlay.Card.Owner == card.Owner && entry.HappenedThisTurn(card.CombatState)) < limit.Value;
+    }
+
+    /// <summary>Scales every live enemy at the escalating-enemies challenge's completed-play thresholds.</summary>
+    public override async Task AfterCardPlayed(PlayerChoiceContext choiceContext, CardPlay cardPlay)
+    {
+        await base.AfterCardPlayed(choiceContext, cardPlay);
+        EnemyCardPlayScalingRule? rule = Challenges.EnemyCardPlayScaling;
+        if (rule == null || cardPlay.Card.CombatState == null)
+        {
+            return;
+        }
+
+        int plays = CombatManager.Instance.History.CardPlaysFinished.Count();
+        IReadOnlyList<Creature> enemies = cardPlay.Card.CombatState.HittableEnemies.ToList();
+        int maxHpSteps = rule.MaxHpPercent / rule.HpPercentPerTrigger;
+        if (plays % rule.CardsPerHpIncrease == 0 && plays <= rule.CardsPerHpIncrease * maxHpSteps)
+        {
+            int hpSteps = Math.Min(plays / rule.CardsPerHpIncrease, maxHpSteps);
+            decimal previousMultiplier = 1m + (hpSteps - 1) * rule.HpPercentPerTrigger / 100m;
+            decimal multiplier = 1m + hpSteps * rule.HpPercentPerTrigger / 100m;
+            foreach (Creature enemy in enemies)
+            {
+                int baseMaxHp = Math.Max(1, (int)Math.Ceiling(enemy.MaxHp / previousMultiplier));
+                int scaledMaxHp = Math.Max(enemy.MaxHp, (int)Math.Ceiling(baseMaxHp * multiplier));
+                enemy.SetMaxHpInternal(scaledMaxHp);
+                enemy.SetCurrentHpInternal(scaledMaxHp);
+            }
+        }
+
+        if (plays % rule.CardsPerStrength == 0
+            && plays <= rule.CardsPerStrength * rule.MaxStrength)
+        {
+            await PowerCmd.Apply<StrengthPower>(choiceContext, enemies, rule.StrengthPerTrigger, null, null);
+        }
+    }
+
+    private static void AddRandomCurses(RunState runState, Player player, int count)
+    {
+        List<CardModel> cursePool = ModelDb.AllCards
+            .Where(c => c.Rarity == CardRarity.Curse)
+            .Distinct()
+            .ToList();
+        for (int i = 0; i < count && cursePool.Count > 0; i++)
+        {
+            CardModel curseTemplate = cursePool[runState.Rng.Niche.NextInt(cursePool.Count)];
+            CardModel curse = curseTemplate.ToMutable();
+            curse.FloorAddedToDeck = 1;
+            runState.AddCard(curse, player);
+            player.Deck.AddInternal(curse, silent: true);
+        }
     }
 
     /// <summary>

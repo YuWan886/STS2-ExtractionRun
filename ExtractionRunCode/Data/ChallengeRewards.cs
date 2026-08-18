@@ -38,3 +38,15 @@ public sealed record GrantRelicRarityRewardAction(RelicRarity Rarity, int Count)
 {
     internal override string CatalogToken => $"grant-relic-rarity:{(int)Rarity}:{Count}";
 }
+
+/// <summary>Grants distinct random relics from a fixed stable id pool.</summary>
+public sealed record GrantFixedRelicsRewardAction(IReadOnlyList<string> RelicIds, int Count) : ChallengeRewardAction
+{
+    internal override string CatalogToken => "grant-fixed-relics:" + Count + ":" + string.Join(',', RelicIds);
+}
+
+/// <summary>Deposits gold directly into the active warehouse.</summary>
+public sealed record GrantGoldRewardAction(int Amount) : ChallengeRewardAction
+{
+    internal override string CatalogToken => "grant-gold:" + Amount;
+}

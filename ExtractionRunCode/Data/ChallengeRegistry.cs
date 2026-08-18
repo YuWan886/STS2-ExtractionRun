@@ -1,6 +1,7 @@
 using MegaCrit.Sts2.Core.Entities.Cards;
 using MegaCrit.Sts2.Core.Entities.Relics;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Models.Relics;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -63,12 +64,16 @@ public static class ChallengeRegistry
     public const string IdDoubleEnemy = "DOUBLE_ENEMY";
     public const string IdOneRest = "ONE_REST";
     public const string IdStrikeOnly = "STRIKE_ONLY";
+    public const string IdHandPressure = "HAND_PRESSURE";
+    public const string IdTenCardsCurses = "TEN_CARDS_CURSES";
+    public const string IdEscalatingEnemies = "ESCALATING_ENEMIES";
     public const string IdAllElite = "ALL_ELITE";
     public const string IdEmptyCarry = "EMPTY_CARRY";
+    public const string IdTwoCardRewards = "TWO_CARD_REWARDS";
 
     private static readonly ChallengeDef[] AllDefs =
     {
-        // Daily — first batch: 3 entries so a day's 3 slots are all distinct. 每日首批 3 条，保证每日 3 槽互不重复。
+        // Daily — entries are sampled without replacement for the hub's five daily slots. 每日条目在大厅的五个槽位中无放回抽取。
         new()
         {
             Id = IdBasicCommon,
@@ -122,6 +127,48 @@ public static class ChallengeRegistry
             Tags = [ChallengeTag.Carry, ChallengeTag.Deck],
             Rewards = [new GrantFixedCardsRewardAction(["HELLRAISER"], 3)],
         },
+        new()
+        {
+            Id = IdHandPressure,
+            Kind = ChallengeKind.Daily,
+            Rules = [new HandEndDamageRule(1)],
+            Tags = [ChallengeTag.Combat, ChallengeTag.Survival],
+            Rewards = [new GrantFixedRelicsRewardAction(
+            [
+                ModelDb.Relic<FakeAnchor>().Id.Entry,
+                ModelDb.Relic<FakeBloodVial>().Id.Entry,
+                ModelDb.Relic<FakeHappyFlower>().Id.Entry,
+                ModelDb.Relic<FakeLeesWaffle>().Id.Entry,
+                ModelDb.Relic<FakeMango>().Id.Entry,
+                ModelDb.Relic<FakeMerchantsRug>().Id.Entry,
+                ModelDb.Relic<FakeOrichalcum>().Id.Entry,
+                ModelDb.Relic<FakeSneckoEye>().Id.Entry,
+                ModelDb.Relic<FakeStrikeDummy>().Id.Entry,
+                ModelDb.Relic<FakeVenerableTeaSet>().Id.Entry,
+            ], 3)],
+        },
+        new()
+        {
+            Id = IdTenCardsCurses,
+            Kind = ChallengeKind.Daily,
+            Rules = [new CardPlayLimitRule(10), new AddRandomCursesPerActRule(1)],
+            Tags = [ChallengeTag.Combat, ChallengeTag.Deck],
+            Rewards = [
+                new GrantRelicRarityRewardAction(RelicRarity.Ancient, 1),
+                new GrantCardRarityRewardAction(CardRarity.Ancient, 2),
+            ],
+        },
+        new()
+        {
+            Id = IdEscalatingEnemies,
+            Kind = ChallengeKind.Daily,
+            Rules = [new EnemyCardPlayScalingRule(5, 3, 100, 3, 1, 6)],
+            Tags = [ChallengeTag.Combat],
+            Rewards = [
+                new GrantCardRarityRewardAction(CardRarity.Rare, 4),
+                new GrantGoldRewardAction(300),
+            ],
+        },
 
         // Permanent — no reward; a clear is tracked as a ✓ on the page. 常驻无奖励，通关页面打勾。
         new()
@@ -138,6 +185,13 @@ public static class ChallengeRegistry
             Kind = ChallengeKind.Permanent,
             Rules = [new EmptyCarryRule(99)],
             Tags = [ChallengeTag.Carry, ChallengeTag.Survival],
+        },
+        new()
+        {
+            Id = IdTwoCardRewards,
+            Kind = ChallengeKind.Permanent,
+            Rules = [new CardRewardChoiceCountRule(2)],
+            Tags = [ChallengeTag.Deck],
         },
     };
 
@@ -232,6 +286,12 @@ public static class ChallengeRegistry
         GrantFixedCardsRewardAction { CardIds.Count: 0 } => false,
         GrantFixedCardsRewardAction fixedCards => fixedCards.CardIds.All(id => !string.IsNullOrWhiteSpace(id)
             && !id.Contains(',')),
+        GrantFixedRelicsRewardAction { Count: <= 0 } => false,
+        GrantFixedRelicsRewardAction { RelicIds.Count: 0 } => false,
+        GrantFixedRelicsRewardAction fixedRelics => fixedRelics.RelicIds.All(id => !string.IsNullOrWhiteSpace(id)
+            && !id.Contains(',')),
+        GrantGoldRewardAction { Amount: <= 0 } => false,
+        GrantGoldRewardAction => true,
         GrantAllCharacterCardsRewardAction => true,
         _ => false,
     };

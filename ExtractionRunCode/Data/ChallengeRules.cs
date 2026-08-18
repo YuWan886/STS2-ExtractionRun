@@ -67,6 +67,38 @@ public sealed record MapPointLimitRule(MapPointType PointType, int MaxPerAct, Ma
     internal override string CatalogToken => $"map-limit:{(int)PointType}:{MaxPerAct}:{(int)Replacement}";
 }
 
+/// <summary>Limits every generated card-reward offer to this many choices.</summary>
+public sealed record CardRewardChoiceCountRule(int Count) : ChallengeRule
+{
+    internal override string CatalogToken => "card-reward-choices:" + Count;
+}
+
+/// <summary>Deals this much unblockable damage for every card left in hand when a player ends their turn.</summary>
+public sealed record HandEndDamageRule(int DamagePerCard) : ChallengeRule
+{
+    internal override string CatalogToken => "hand-end-damage:" + DamagePerCard;
+}
+
+/// <summary>Limits each player's manual card plays during one turn.</summary>
+public sealed record CardPlayLimitRule(int MaxPlaysPerTurn) : ChallengeRule
+{
+    internal override string CatalogToken => "card-play-limit:" + MaxPlaysPerTurn;
+}
+
+/// <summary>Adds a deterministic number of random curses after every completed act.</summary>
+public sealed record AddRandomCursesPerActRule(int Count) : ChallengeRule
+{
+    internal override string CatalogToken => "curses-per-act:" + Count;
+}
+
+/// <summary>Scales all current enemies at configured completed-card-play thresholds in a combat.</summary>
+public sealed record EnemyCardPlayScalingRule(int HpPercentPerTrigger, int CardsPerHpIncrease, int MaxHpPercent,
+    int CardsPerStrength, int StrengthPerTrigger, int MaxStrength) : ChallengeRule
+{
+    internal override string CatalogToken => $"enemy-card-scale:{HpPercentPerTrigger}:{CardsPerHpIncrease}:{MaxHpPercent}:"
+        + $"{CardsPerStrength}:{StrengthPerTrigger}:{MaxStrength}";
+}
+
 /// <summary>
 /// The normalized, immutable runtime view of a challenge selection. It is the sole place that composes rules, so Hub,
 /// modifier hooks and Harmony patches never need to know individual challenge ids.
@@ -106,6 +138,32 @@ public sealed class ChallengeRuntime
     }
 
     public int RandomCurseCount => _rules.OfType<AddRandomCursesRule>().Sum(rule => rule.Count);
+
+    public int RandomCursesPerAct => _rules.OfType<AddRandomCursesPerActRule>().Sum(rule => rule.Count);
+
+    public int? CardRewardChoiceCount
+    {
+        get
+        {
+            int[] counts = _rules.OfType<CardRewardChoiceCountRule>().Select(rule => rule.Count).ToArray();
+            return counts.Length == 0 ? null : counts.Min();
+        }
+    }
+
+    public int? CardPlayLimitPerTurn
+    {
+        get
+        {
+            int[] limits = _rules.OfType<CardPlayLimitRule>().Select(rule => rule.MaxPlaysPerTurn).ToArray();
+            return limits.Length == 0 ? null : limits.Min();
+        }
+    }
+
+    public int HandEndDamagePerCard => _rules.OfType<HandEndDamageRule>().Sum(rule => rule.DamagePerCard);
+
+    public EnemyCardPlayScalingRule? EnemyCardPlayScaling => _rules.OfType<EnemyCardPlayScalingRule>()
+        .OrderByDescending(rule => rule.HpPercentPerTrigger)
+        .FirstOrDefault();
 
     public decimal EnemyHpMultiplier => _rules.OfType<EnemyStatMultiplierRule>()
         .Aggregate(1m, (value, rule) => value * rule.HpMultiplier);

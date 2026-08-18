@@ -435,12 +435,22 @@ public sealed partial class WarehouseHubScreen
                     ExtractionLocalization.FilterRarityLabel(relicsByRarity.Rarity.ToString().ToLowerInvariant()));
         }
 
+        if (action is GrantFixedRelicsRewardAction fixedRelics)
+        {
+            return ExtractionLocalization.ChallengeRewardFixedRelicsText(fixedRelics.Count);
+        }
+
         if (action is GrantCardRarityRewardAction cardsByRarity)
         {
             string rarityName = ExtractionLocalization.FilterRarityLabel(cardsByRarity.Rarity.ToString().ToLowerInvariant());
             return cardsByRarity.Count > 0
                 ? ExtractionLocalization.ChallengeRewardRandomText(cardsByRarity.Count, rarityName)
                 : ExtractionLocalization.ChallengeRewardAllText(rarityName);
+        }
+
+        if (action is GrantGoldRewardAction gold)
+        {
+            return ExtractionLocalization.ChallengeRewardGoldText(gold.Amount);
         }
 
         throw new InvalidOperationException($"Unknown challenge reward action: {action.GetType().Name}");

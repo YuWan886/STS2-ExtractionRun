@@ -1017,6 +1017,64 @@ public static class WarehouseStore
         return (new List<WarehouseCard>(), granted);
     }
 
+    /// <summary>Grants distinct random relics from an explicitly declared challenge pool.</summary>
+    public static (List<WarehouseCard> Cards, List<WarehouseRelic> Relics) GrantFixedRelics(
+        string[] relicIds, int count)
+    {
+        var granted = new List<WarehouseRelic>();
+        try
+        {
+            List<RelicModel> candidates = relicIds.Distinct(StringComparer.Ordinal)
+                .Select(id => ModelDb.GetByIdOrNull<RelicModel>(new ModelId(ModelId.SlugifyCategory<RelicModel>(), id)))
+                .OfType<RelicModel>()
+                .ToList();
+            List<RelicModel> picks = candidates.OrderBy(_ => Random.Shared.Next()).Take(Math.Min(count, candidates.Count)).ToList();
+            var store = RitsuLibFramework.GetDataStore(Entry.ModId);
+            store.Modify<WarehouseData>(ActiveKey, data =>
+            {
+                data.Version++;
+                foreach (RelicModel relic in picks)
+                {
+                    WarehouseRelic warehouseRelic = new()
+                    {
+                        Relic = NormalizeRelic(relic.ToMutable().ToSerializable()),
+                        Durability = MaxDurabilityForRelic(),
+                    };
+                    data.Relics.Add(warehouseRelic);
+                    granted.Add(warehouseRelic);
+                }
+            });
+            store.Save(ActiveKey);
+        }
+        catch (Exception ex)
+        {
+            Entry.Logger.Warn($"GrantFixedRelics failed: {ex.Message}");
+        }
+
+        return (new List<WarehouseCard>(), granted);
+    }
+
+    /// <summary>Deposits a challenge's gold reward directly into the active warehouse.</summary>
+    public static int GrantGold(int amount)
+    {
+        int granted = 0;
+        if (amount <= 0)
+        {
+            return granted;
+        }
+
+        var store = RitsuLibFramework.GetDataStore(Entry.ModId);
+        store.Modify<WarehouseData>(ActiveKey, data =>
+        {
+            data.Version++;
+            int before = data.Gold;
+            data.Gold = Math.Min(MaxGold, data.Gold + amount);
+            granted = data.Gold - before;
+        });
+        store.Save(ActiveKey);
+        return granted;
+    }
+
     /// <summary>
     /// Strips a relic down to its base state: no saved props (stack amounts), no deck-floor marker. 把遗物归一为基础态（去属性）。
     /// </summary>

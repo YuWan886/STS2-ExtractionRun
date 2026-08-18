@@ -342,6 +342,10 @@ public static class ExtractionLocalization
         Formatted("EXTRACTION_RUN.challenge.reward.ancientRelics", count);
     public static string ChallengeRewardFixedText(int count, string name) =>
         Formatted("EXTRACTION_RUN.challenge.reward.fixed", count, name);
+    public static string ChallengeRewardFixedRelicsText(int count) =>
+        Formatted("EXTRACTION_RUN.challenge.reward.fixedRelics", count);
+    public static string ChallengeRewardGoldText(int amount) =>
+        Formatted("EXTRACTION_RUN.challenge.reward.gold", amount);
     public static string ChallengeSummaryText(string joined) => Formatted("EXTRACTION_RUN.challenge.summary", joined);
     public static string ChallengeSearchPlaceholderText() => Text("EXTRACTION_RUN.challenge.search");
     public static string ChallengeFilterAllText() => Text("EXTRACTION_RUN.challenge.filter.all");
