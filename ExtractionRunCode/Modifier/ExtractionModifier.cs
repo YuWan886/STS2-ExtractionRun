@@ -424,10 +424,12 @@ public sealed class ExtractionModifier : ModifierModel
             decimal multiplier = 1m + hpSteps * rule.HpPercentPerTrigger / 100m;
             foreach (Creature enemy in enemies)
             {
-                int baseMaxHp = Math.Max(1, (int)Math.Ceiling(enemy.MaxHp / previousMultiplier));
-                int scaledMaxHp = Math.Max(enemy.MaxHp, (int)Math.Ceiling(baseMaxHp * multiplier));
+                int previousMaxHp = enemy.MaxHp;
+                int previousCurrentHp = enemy.CurrentHp;
+                int baseMaxHp = Math.Max(1, (int)Math.Ceiling(previousMaxHp / previousMultiplier));
+                int scaledMaxHp = Math.Max(previousMaxHp, (int)Math.Ceiling(baseMaxHp * multiplier));
                 enemy.SetMaxHpInternal(scaledMaxHp);
-                enemy.SetCurrentHpInternal(scaledMaxHp);
+                enemy.SetCurrentHpInternal((decimal)previousCurrentHp * scaledMaxHp / previousMaxHp);
             }
         }
 

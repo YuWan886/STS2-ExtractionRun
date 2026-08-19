@@ -53,6 +53,8 @@ public static class Entry
         // 联机大厅 mod 可托管搜打撤房间；检测到它时把其建房流程桥接进开跑链路。
         LanConnectCompat.InstallIfNeeded(harmony);
 
+        ExtractionReconnectCompat.InstallIfNeeded(harmony);
+
         Logger.Info("ExtractionRun initialized.");
     }
 }
