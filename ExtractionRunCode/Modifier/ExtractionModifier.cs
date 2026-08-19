@@ -517,10 +517,12 @@ public sealed class ExtractionModifier : ModifierModel
     }
 
     /// <summary>
-    /// Engine A merchant arm: the in-run merchant sells Basic/Common only under the BASIC_COMMON challenge. An empty
-    /// filtered result falls back to the original pool (the merchant throws on an empty pool; better a few off-brand
-    /// cards than a broken shop). 引擎 A 的商人分支：仅基础+普通挑战下，局内商人只售基础+普通卡。过滤后为空时回退原池
-    /// （商人空池会抛异常——宁可偶尔卖出越界卡也不坏店）。
+    /// Engine A merchant arm: the in-run merchant sells Basic/Common only under the BASIC_COMMON challenge. Merchant
+    /// generation separately requests Attack, Skill and Power cards, while it discards Basic cards after this hook.
+    /// Restore the original candidates only for a type that otherwise has no sellable Common card, so the shop remains
+    /// valid without unnecessarily leaking other off-challenge cards. 引擎 A 的商人分支：仅基础+普通挑战下，局内商人只售
+    /// 基础+普通卡。商店会分别请求攻击、技能、能力牌，且会在此钩子后丢弃基础牌；只有某类型没有可售普通牌时才补回该类型
+    /// 的原候选，既保证商店有效，也不无谓漏出其他挑战外卡牌。
     /// </summary>
     public override IEnumerable<CardModel> ModifyMerchantCardPool(Player player, IEnumerable<CardModel> options)
     {
@@ -530,8 +532,18 @@ public sealed class ExtractionModifier : ModifierModel
             return options;
         }
 
-        List<CardModel> filtered = options.Where(challenges.AllowsAcquiredCard).ToList();
-        return filtered.Count == 0 ? options : filtered;
+        CardModel[] sellableOptions = options.Where(card => card.Rarity != CardRarity.Basic).ToArray();
+        List<CardModel> filtered = sellableOptions.Where(challenges.AllowsAcquiredCard).ToList();
+
+        foreach (CardType type in new[] { CardType.Attack, CardType.Skill, CardType.Power })
+        {
+            if (sellableOptions.Any(card => card.Type == type) && !filtered.Any(card => card.Type == type))
+            {
+                filtered.AddRange(sellableOptions.Where(card => card.Type == type));
+            }
+        }
+
+        return filtered.Count == 0 ? sellableOptions : filtered;
     }
 
     /// <summary>
