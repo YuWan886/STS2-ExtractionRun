@@ -221,7 +221,7 @@
   "EXTRACTION_RUN.challenge.BASIC_COMMON.title": "Basic Skills",
   "EXTRACTION_RUN.challenge.BASIC_COMMON.desc": "Every card that enters your deck is Basic or Common.",
   "EXTRACTION_RUN.challenge.HP_ONE.title": "Glass Cannon",
-  "EXTRACTION_RUN.challenge.HP_ONE.desc": "Start with 1 max HP.",
+  "EXTRACTION_RUN.challenge.HP_ONE.desc": "Start at 1/1 HP.",
   "EXTRACTION_RUN.challenge.CURSES.title": "Cursed Start",
   "EXTRACTION_RUN.challenge.CURSES.desc": "2 random curses join your deck at the start.",
   "EXTRACTION_RUN.challenge.DOUBLE_ENEMY.title": "Overwhelming Foe",

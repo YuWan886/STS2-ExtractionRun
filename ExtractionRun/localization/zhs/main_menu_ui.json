@@ -221,7 +221,7 @@
   "EXTRACTION_RUN.challenge.BASIC_COMMON.title": "基本功",
   "EXTRACTION_RUN.challenge.BASIC_COMMON.desc": "本局牌组只能携带和获得基础与普通稀有度卡牌。",
   "EXTRACTION_RUN.challenge.HP_ONE.title": "纸片人",
-  "EXTRACTION_RUN.challenge.HP_ONE.desc": "初始血量上限为1。",
+  "EXTRACTION_RUN.challenge.HP_ONE.desc": "开局生命值固定为1/1。",
   "EXTRACTION_RUN.challenge.CURSES.title": "厄运缠身",
   "EXTRACTION_RUN.challenge.CURSES.desc": "开局向牌组塞入2张随机诅咒。",
   "EXTRACTION_RUN.challenge.DOUBLE_ENEMY.title": "强敌环伺",

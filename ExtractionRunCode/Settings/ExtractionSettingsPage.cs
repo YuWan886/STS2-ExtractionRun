@@ -187,6 +187,11 @@ public static class ExtractionSettingsPage
         static s => s.ShopSellRatio,
         static (s, v) => s.ShopSellRatio = v);
 
+    private static readonly ModSettingsValueBinding<ExtractionSettings, bool> IncludeMultiplayerOnlyShopContentBinding = new(
+        Entry.ModId, DataKey, SaveScope.Global,
+        static s => s.IncludeMultiplayerOnlyShopContent,
+        static (s, v) => s.IncludeMultiplayerOnlyShopContent = v);
+
     private static readonly ModSettingsValueBinding<ExtractionSettings, bool> LootEnabledBinding = new(
         Entry.ModId, DataKey, SaveScope.Global,
         static s => s.LootAnimationEnabled,
@@ -356,7 +361,10 @@ public static class ExtractionSettingsPage
                     static d => $"×{d:0.0}", description: ExtractionLocalization.ShopPriceMultiplierDescriptionText())
                 .AddSlider("shop_sell_ratio", ExtractionLocalization.ShopSellRatioText(),
                     ShopSellRatioBinding, 0.1, 1.0, 0.05,
-                    static d => $"{d:P0}", description: ExtractionLocalization.ShopSellRatioDescriptionText()))
+                    static d => $"{d:P0}", description: ExtractionLocalization.ShopSellRatioDescriptionText())
+                .AddToggle("shop_multiplayer_content", ExtractionLocalization.ShopMultiplayerContentText(),
+                    IncludeMultiplayerOnlyShopContentBinding,
+                    description: ExtractionLocalization.ShopMultiplayerContentDescriptionText()))
             .AddSection("loot", section => section
                 .WithTitle(ExtractionLocalization.LootSectionTitleText())
                 // Pure cosmetic — flipping the toggle needs no confirm and is safe mid-run (only affects the next screen
@@ -634,6 +642,8 @@ public static class ExtractionSettingsPage
             ShopPriceMultiplierBinding.Save();
             ShopSellRatioBinding.Write(Current.ShopSellRatio);
             ShopSellRatioBinding.Save();
+            IncludeMultiplayerOnlyShopContentBinding.Write(Current.IncludeMultiplayerOnlyShopContent);
+            IncludeMultiplayerOnlyShopContentBinding.Save();
             LootEnabledBinding.Write(Current.LootAnimationEnabled);
             LootEnabledBinding.Save();
             LootBasicCommonBinding.Write(Current.LootAnimationBasicCommonDuration);

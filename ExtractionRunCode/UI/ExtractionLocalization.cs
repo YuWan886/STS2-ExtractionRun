@@ -203,6 +203,14 @@ public static class ExtractionLocalization
         ModSettingsText.LocString(SettingsTable, "extractionrun.settings.shop.sellRatio.description",
             "Ratio of the vanilla base price paid when selling (before the durability factor).");
 
+    public static ModSettingsText ShopMultiplayerContentText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.shop.multiplayerContent",
+            "Include multiplayer-only content");
+
+    public static ModSettingsText ShopMultiplayerContentDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.shop.multiplayerContent.description",
+            "Allow shop refreshes to roll multiplayer-only cards. Relics and potions have no separate multiplayer-only pool in this game version. Takes effect on the next refresh.");
+
     public static ModSettingsText LootSectionTitleText() =>
         ModSettingsText.LocString(SettingsTable, "extractionrun.settings.section.loot.title", "Loot Animation");
 

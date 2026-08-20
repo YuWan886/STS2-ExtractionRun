@@ -37,9 +37,9 @@ public static class ShopStore
     private const int RelicSlots = 8;
     private const int PotionSlots = 6;
 
-    /// <summary>Stock layout version — bump when slot counts change so a same-day old stock re-rolls once.
-    /// 库存布局版本——槽位数变化时递增，让当天旧库存重 roll 一次。</summary>
-    private const int StockLayoutVersion = 1;
+    /// <summary>Stock layout/rules version — bump when slot counts or stock eligibility changes so same-day old stock
+    /// re-rolls once. 库存布局/规则版本——槽位数或库存资格变化时递增，让当天旧库存重 roll 一次。</summary>
+    private const int StockLayoutVersion = 2;
 
     /// <summary>Manual refresh fee curve (hard-coded): first refresh 50, +50 each, capped at 250; resets daily.
     /// 手动刷新费用曲线（硬编码）：首刷 50，每次 +50，封顶 250；随翻页重置。</summary>
@@ -292,11 +292,17 @@ public static class ShopStore
         // No character is selected at the hub, so "colored" = every non-colorless pool (the vanilla merchant splits
         // 2A/2S/1P + 2 colorless for the current character; we just widen the colored count).
         var colored = ModelDb.AllCards
-            .Where(c => c.Pool is not ColorlessCardPool && IsShopCardRarity(c.Rarity))
+            .Where(c => c.Pool is not ColorlessCardPool
+                        && IsShopCardRarity(c.Rarity)
+                        && (ExtractionSettingsPage.Current.IncludeMultiplayerOnlyShopContent
+                            || c.MultiplayerConstraint != CardMultiplayerConstraint.MultiplayerOnly))
             .Distinct()
             .ToList();
         var colorless = ModelDb.AllCards
-            .Where(c => c.Pool is ColorlessCardPool && c.Rarity is CardRarity.Uncommon or CardRarity.Rare)
+            .Where(c => c.Pool is ColorlessCardPool
+                        && c.Rarity is (CardRarity.Uncommon or CardRarity.Rare)
+                        && (ExtractionSettingsPage.Current.IncludeMultiplayerOnlyShopContent
+                            || c.MultiplayerConstraint != CardMultiplayerConstraint.MultiplayerOnly))
             .Distinct()
             .ToList();
 

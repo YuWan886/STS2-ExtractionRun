@@ -53,6 +53,8 @@
   "extractionrun.settings.shop.buyMultiplier.description": "Multiplier applied to the rolled vanilla shop price when buying.",
   "extractionrun.settings.shop.sellRatio": "Sell ratio",
   "extractionrun.settings.shop.sellRatio.description": "Ratio of the vanilla base price paid when selling (before the durability factor).",
+  "extractionrun.settings.shop.multiplayerContent": "Include multiplayer-only content",
+  "extractionrun.settings.shop.multiplayerContent.description": "Allow shop refreshes to roll multiplayer-only cards. Takes effect on the next refresh.",
   "extractionrun.settings.section.loot.title": "Loot Animation",
   "extractionrun.settings.loot.enabled": "Loot search animation",
   "extractionrun.settings.loot.enabled.description": "Before revealing rewards on card-choice, merchant and treasure-chest screens, play a magnifier search reveal. Extraction runs only.",

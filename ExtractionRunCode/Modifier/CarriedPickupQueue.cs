@@ -98,6 +98,13 @@ public static class CarriedPickupQueue
 
                 try
                 {
+                    // Card-selection relics complete their choice task while the prior screen is still unwinding.
+                    // Starting the next pickup in that gap can stack/replace the screen and lose its follow-up effect.
+                    // Start every pickup from an idle overlay stack, then yield one frame for the active screen context.
+                    if (!await WaitForOverlayIdleAsync(queuedRun, cts.Token))
+                    {
+                        return;
+                    }
                     await relic.AfterObtained();
                 }
                 catch (Exception ex) when (IsSessionAbort(ex))
@@ -121,6 +128,33 @@ public static class CarriedPickupQueue
             {
                 _drainCts = null;
             }
+        }
+    }
+
+    /// <summary>Waits until no overlay from the preceding pickup is active, then yields one process frame so its
+    /// close callbacks and active-screen context have settled before the next carried pickup can open a screen.
+    /// 等待上一件遗物的覆盖层退栈，再让出一帧使关闭回调和活动界面上下文稳定后才执行下一件携带遗物。</summary>
+    private static async Task<bool> WaitForOverlayIdleAsync(RunState runState, CancellationToken ct)
+    {
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!IsRunCurrent(runState))
+            {
+                return false;
+            }
+
+            NOverlayStack? overlays = NOverlayStack.Instance;
+            if (overlays != null && overlays.ScreenCount == 0)
+            {
+                await WaitForFrameOrDelayAsync(ct);
+                if (NOverlayStack.Instance is { ScreenCount: 0 })
+                {
+                    return true;
+                }
+            }
+
+            await WaitForFrameOrDelayAsync(ct);
         }
     }
 

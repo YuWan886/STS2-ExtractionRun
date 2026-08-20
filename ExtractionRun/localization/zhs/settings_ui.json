@@ -53,6 +53,8 @@
   "extractionrun.settings.shop.buyMultiplier.description": "购买时对原版商店价格的倍率（原价已含生成时的随机浮动）。",
   "extractionrun.settings.shop.sellRatio": "出售比例",
   "extractionrun.settings.shop.sellRatio.description": "出售时按原版基准价的支付比例（再乘耐久系数）。",
+  "extractionrun.settings.shop.multiplayerContent": "刷新多人专属内容",
+  "extractionrun.settings.shop.multiplayerContent.description": "允许商店刷新出多人专属卡牌。下次刷新时生效。",
   "extractionrun.settings.section.loot.title": "搜刮动画",
   "extractionrun.settings.loot.enabled": "搜刮揭示动画",
   "extractionrun.settings.loot.enabled.description": "在卡牌三选一、商人和宝箱界面揭示奖励前播放放大镜搜刮动画（仅搜打撤局）。",

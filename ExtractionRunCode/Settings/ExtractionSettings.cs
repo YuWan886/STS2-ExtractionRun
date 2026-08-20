@@ -100,6 +100,13 @@ public sealed class ExtractionSettings
     public double ShopSellRatio { get; set; } = 0.5;
 
     /// <summary>
+    /// Whether shop refreshes may roll cards marked as multiplayer-only by the base game. Relics and potions have no
+    /// multiplayer-only model constraint in this game version and remain in their normal pools. Default ON.
+    /// 商店刷新是否允许 roll 原版标记为多人专属的卡牌。本版本遗物和药水没有多人专属模型约束，仍使用原有池。默认开启。
+    /// </summary>
+    public bool IncludeMultiplayerOnlyShopContent { get; set; } = true;
+
+    /// <summary>
     /// Whether the 搜刮 loot-search reveal plays on reward screens (card rewards, treasure chest) in
     /// extraction runs only. Pure cosmetic; default OFF.
     /// 搜刮动画是否启用：仅搜打撤局内，在卡牌奖励 / 宝箱界面播放搜刮揭示动画。纯视觉，默认关闭。
@@ -171,6 +178,7 @@ public sealed class ExtractionSettings
         CapacityWeightRelic = 2;
         ShopPriceMultiplier = 2.0;
         ShopSellRatio = 0.5;
+        IncludeMultiplayerOnlyShopContent = true;
         LootAnimationEnabled = false;
         LootAnimationBasicCommonDuration = 1;
         LootAnimationUncommonDuration = 2;

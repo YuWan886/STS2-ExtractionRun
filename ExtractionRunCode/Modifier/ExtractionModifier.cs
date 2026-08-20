@@ -8,6 +8,7 @@ using MegaCrit.Sts2.Core.GameActions.Multiplayer;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Map;
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Models.CardPools;
 using MegaCrit.Sts2.Core.Models.Powers;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Saves.Runs;
@@ -442,9 +443,11 @@ public sealed class ExtractionModifier : ModifierModel
 
     private static void AddRandomCurses(RunState runState, Player player, int count)
     {
-        List<CardModel> cursePool = ModelDb.AllCards
-            .Where(c => c.Rarity == CardRarity.Curse)
-            .Distinct()
+        // Match the official CursedRun source: only unlocked curses allowed by the current
+        // single-/multiplayer constraint and modifier-generation policy may be selected.
+        List<CardModel> cursePool = ModelDb.CardPool<CurseCardPool>()
+            .GetUnlockedCards(player.UnlockState, player.RunState.CardMultiplayerConstraint)
+            .Where(c => c.CanBeGeneratedByModifiers)
             .ToList();
         for (int i = 0; i < count && cursePool.Count > 0; i++)
         {
