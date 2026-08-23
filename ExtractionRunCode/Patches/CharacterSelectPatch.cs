@@ -114,6 +114,8 @@ public static class CharacterSelectPatch
             return;
         }
 
+        ExtractionCarrySync.EnsureRegistered(lobby);
+
         if (ExtractionRunContext.IsExtractionLaunch)
         {
             // Consume the intent first: even if the modifier apply failed, a later vanilla launch must not inherit it.

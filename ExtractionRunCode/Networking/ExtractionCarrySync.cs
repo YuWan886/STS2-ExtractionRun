@@ -1,4 +1,5 @@
 using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Multiplayer.Game;
 using MegaCrit.Sts2.Core.Multiplayer.Game.Lobby;
 using ExtractionRun.Data;
 using ExtractionRun.Lifecycle;
@@ -15,9 +16,29 @@ namespace ExtractionRun.Networking;
 /// </summary>
 public static class ExtractionCarrySync
 {
+    private static StartRunLobby? _registeredLobby;
+
+    /// <summary>Registers the direct carry handoff on the active lobby service.</summary>
+    public static void EnsureRegistered(StartRunLobby lobby)
+    {
+        if (ReferenceEquals(_registeredLobby, lobby))
+        {
+            return;
+        }
+
+        if (_registeredLobby != null)
+        {
+            _registeredLobby.NetService.UnregisterMessageHandler<ExtractionCarryMessage>(HandleCarryMessage);
+        }
+
+        _registeredLobby = lobby;
+        lobby.NetService.RegisterMessageHandler<ExtractionCarryMessage>(HandleCarryMessage);
+    }
+
     /// <summary>Stages the local player's persistent pending carry into the lobby staging. 把本机待发携带暂存进大厅。</summary>
     public static void StagePendingCarry(StartRunLobby lobby, ulong localNetId)
     {
+        EnsureRegistered(lobby);
         CarryConfig pending = PendingCarryStore.Current;
         ExtractionRunData.Carry.Lobby.Set(lobby, localNetId, pending);
         Entry.Logger.Info($"ExtractionCarrySync staged carry for player {localNetId}: " +
@@ -50,6 +71,48 @@ public static class ExtractionCarrySync
         }
 
         lobby.SetModifiers(new List<ModifierModel> { model });
+    }
+
+    public static void SendConfirmedCarry(StartRunLobby lobby, CarryConfig config)
+    {
+        EnsureRegistered(lobby);
+        if (lobby.NetService.Type != NetGameType.Client || !lobby.NetService.IsConnected)
+        {
+            return;
+        }
+
+        try
+        {
+            lobby.NetService.SendMessage(ExtractionCarryMessage.From(config));
+            Entry.Logger.Info($"ExtractionCarrySync sent direct carry handoff: {config.Cards.Count} cards, " +
+                              $"{config.Relics.Count} relics, {config.Potions.Count} potions, {config.Gold} gold.");
+        }
+        catch (Exception ex)
+        {
+            Entry.Logger.Warn($"ExtractionCarrySync: direct carry handoff failed: {ex.Message}");
+        }
+    }
+
+    private static void HandleCarryMessage(ExtractionCarryMessage message, ulong senderId)
+    {
+        StartRunLobby? lobby = _registeredLobby;
+        if (lobby == null || lobby.NetService.Type != NetGameType.Host || senderId == lobby.NetService.NetId)
+        {
+            return;
+        }
+
+        try
+        {
+            CarryConfig carry = message.Decode();
+            ExtractionRunData.Carry.Lobby.Set(lobby, senderId, carry);
+            Entry.Logger.Info($"ExtractionCarrySync host received direct carry from player {senderId}: " +
+                              $"{carry.Cards.Count} cards, {carry.Relics.Count} relics, " +
+                              $"{carry.Potions.Count} potions, {carry.Gold} gold.");
+        }
+        catch (Exception ex)
+        {
+            Entry.Logger.Warn($"ExtractionCarrySync: rejected direct carry from player {senderId}: {ex.Message}");
+        }
     }
 
     /// <summary>True when the given modifiers include the extraction modifier. 修正项中是否含搜打撤修正项。</summary>

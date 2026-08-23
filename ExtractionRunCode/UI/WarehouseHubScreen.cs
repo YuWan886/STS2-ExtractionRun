@@ -11,6 +11,7 @@ using STS2RitsuLib.Ui.Toast;
 using ExtractionRun.Data;
 using ExtractionRun.Lifecycle;
 using ExtractionRun.Modifier;
+using ExtractionRun.Networking;
 using ExtractionRun.Settings;
 
 namespace ExtractionRun.UI;
@@ -1795,7 +1796,16 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         PendingCarryStore.Set(_carry);
         if (_lobby is StartRunLobby lobby)
         {
-            ExtractionRunData.Carry.Lobby.Set(lobby, lobby.NetService.NetId, _carry);
+            ExtractionCarrySync.SendConfirmedCarry(lobby, _carry);
+            try
+            {
+                // Keep the RitsuLib staging path as a compatibility fallback for hosts where it is available.
+                ExtractionRunData.Carry.Lobby.Set(lobby, lobby.NetService.NetId, _carry);
+            }
+            catch (Exception ex)
+            {
+                Entry.Logger.Warn($"WarehouseHub: legacy carry staging failed; direct handoff remains active: {ex.Message}");
+            }
         }
 
         Entry.Logger.Info($"WarehouseHub: client confirmed carry {_carry.Cards.Count} cards, " +
