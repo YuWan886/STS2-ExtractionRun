@@ -86,5 +86,15 @@
   "extractionrun.settings.section.reset.title": "Reset",
   "extractionrun.settings.reset.label": "Restore Defaults",
   "extractionrun.settings.reset.button": "Reset",
-  "extractionrun.settings.reset.description": "Restore all Search-Loot-Extract settings to their default values."
+  "extractionrun.settings.reset.description": "Restore all Search-Loot-Extract settings to their default values.",
+
+  "extractionrun.settings.section.saveTransfer.title": "Save Transfer",
+  "extractionrun.settings.save.export.label": "Export save",
+  "extractionrun.settings.save.export.button": "Export",
+  "extractionrun.settings.save.export.description": "Pack the complete Search-Loot-Extract save (warehouse, pending carry, shop, challenges and settings) into a ZIP file.",
+  "extractionrun.settings.save.import.label": "Import save",
+  "extractionrun.settings.save.import.button": "Import",
+  "extractionrun.settings.save.import.description": "Restore a save from a previously exported ZIP. Only available from the main menu outside a run or lobby.",
+  "extractionrun.settings.save.status.label": "Status",
+  "extractionrun.settings.save.status.description": "Latest export/import results and the mod-data cloud sync toggle state."
 }

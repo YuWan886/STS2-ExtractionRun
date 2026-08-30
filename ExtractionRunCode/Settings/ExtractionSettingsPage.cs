@@ -67,6 +67,16 @@ public static class ExtractionSettingsPage
     /// <summary>Same re-entry + reset guard for the capacity toggle. 容量开关的同类防重入/重置守卫。</summary>
     private static bool _suppressCapacityToggle;
 
+    // ----- 存档管理 (save transfer) section state 存档管理区状态 -----
+
+    /// <summary>The live status row of the save-transfer section (re-captured on every settings-page refresh).
+    /// 存档管理区状态行（每次设置页刷新时重新捕获）。</summary>
+    private static Label? _statusLabel;
+
+    private static string? _lastExportPath;
+    private static string? _lastBackupName;
+    private static int _lastImportedSlotCount;
+
     private static readonly ModSettingsValueBinding<ExtractionSettings, int> MaxCardsBinding = new(
         Entry.ModId, DataKey, SaveScope.Global,
         static s => s.MaxCarryCards,
@@ -425,6 +435,30 @@ public static class ExtractionSettingsPage
                     ExtractionLocalization.ExtractionPointActChanceText(),
                     ExtractionPointActChanceBinding, 0.0, 1.0, 0.05,
                     static d => $"{d:P0}", description: ExtractionLocalization.ExtractionPointActChanceDescriptionText()))
+            .AddSection("save_transfer", section => section
+                .WithTitle(ExtractionLocalization.SaveTransferSectionTitleText())
+                // Export is always allowed (reads the live instances); import is press-time guarded to the main menu
+                // outside a run/lobby (the settings page itself can be opened anywhere, incl. via the hotkey).
+                // 导出随时允许（读活实例）；导入在按下时护栏：仅限主菜单且非局内/大厅（设置页本身可在任意界面打开，含热键）。
+                .AddButton(
+                    "save_export",
+                    ExtractionLocalization.SaveExportLabelText(),
+                    ExtractionLocalization.SaveExportButtonText(),
+                    ExportSaveClicked,
+                    ModSettingsButtonTone.Normal,
+                    ExtractionLocalization.SaveExportDescriptionText())
+                .AddButton(
+                    "save_import",
+                    ExtractionLocalization.SaveImportLabelText(),
+                    ExtractionLocalization.SaveImportButtonText(),
+                    ImportSaveClicked,
+                    ModSettingsButtonTone.Danger,
+                    ExtractionLocalization.SaveImportDescriptionText())
+                .AddCustom(
+                    "save_status",
+                    ExtractionLocalization.SaveStatusLabelText(),
+                    _ => CreateStatusControl(),
+                    ExtractionLocalization.SaveStatusDescriptionText()))
             .AddSection("reset", section => section
                 .WithTitle(ExtractionLocalization.ResetSectionTitleText())
                 .AddButton(
@@ -682,6 +716,262 @@ public static class ExtractionSettingsPage
         if (oldEnabled != Current.DurabilityEnabled)
         {
             WarehouseStore.SwitchDurabilityMode(Current.DurabilityEnabled);
+        }
+    }
+
+    // ----- 存档管理 (save transfer) handlers 存档管理处理器 -----
+
+    /// <summary>
+    /// Creates the status row control for the save-transfer section and captures it so export/import results can be
+    /// shown immediately. RitsuLib re-invokes the factory on every settings-page refresh (the captured instance always
+    /// matches the live page). 创建存档管理区的状态行控件并捕获引用，供导出/导入后立即刷新。RitsuLib 每次刷新设置页都会重跑
+    /// 工厂（重新捕获），因此引用始终对应当前页面。
+    /// </summary>
+    private static Control CreateStatusControl()
+    {
+        var label = new Label
+        {
+            Text = BuildStatusText(),
+            AutowrapMode = TextServer.AutowrapMode.WordSmart,
+        };
+        label.AddThemeColorOverride("font_color", ExtractionTheme.TextSecondary);
+        label.AddThemeFontSizeOverride("font_size", ExtractionTheme.FontSizeBody);
+        _statusLabel = label;
+        return label;
+    }
+
+    private static void UpdateStatus()
+    {
+        if (_statusLabel != null && GodotObject.IsInstanceValid(_statusLabel))
+        {
+            _statusLabel.Text = BuildStatusText();
+        }
+    }
+
+    /// <summary>Status text: cloud-sync toggle state plus the latest export / import / backup results.
+    /// 状态文本：云同步开关状态 + 最近一次导出/导入/备份结果。</summary>
+    private static string BuildStatusText()
+    {
+        var parts = new List<string> { ExtractionLocalization.SaveStatusCloudText(SaveTransfer.IsCloudSyncEnabled()) };
+        if (_lastExportPath != null)
+        {
+            parts.Add(ExtractionLocalization.SaveStatusLastExportText(_lastExportPath));
+        }
+
+        if (_lastImportedSlotCount > 0)
+        {
+            parts.Add(ExtractionLocalization.SaveStatusLastImportText(_lastImportedSlotCount));
+        }
+
+        if (_lastBackupName != null)
+        {
+            parts.Add(ExtractionLocalization.SaveStatusLastBackupText(_lastBackupName));
+        }
+
+        return string.Join("\n", parts);
+    }
+
+    /// <summary>Suggested file name for the export dialog (profile-scoped + timestamp). 导出对话框的默认文件名。</summary>
+    private static string DefaultExportFileName()
+    {
+        string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        return $"ExtractionRun_profile{SaveTransfer.CurrentProfileId}_{stamp}.zip";
+    }
+
+    private static void ExportSaveClicked(IModSettingsUiActionHost host)
+    {
+        if (Engine.GetMainLoop() is not SceneTree { Root: not null })
+        {
+            RitsuToastService.ShowWarning(ExtractionLocalization.SaveExportFailedText());
+            return;
+        }
+
+        var dialog = new FileDialog
+        {
+            Title = ExtractionLocalization.SaveExportDialogTitleText(),
+            FileMode = FileDialog.FileModeEnum.SaveFile,
+            Access = FileDialog.AccessEnum.Filesystem,
+            CurrentFile = DefaultExportFileName(),
+        };
+        dialog.AddFilter("*.zip", "ZIP");
+        dialog.FileSelected += path =>
+        {
+            dialog.QueueFree();
+            try
+            {
+                SaveTransfer.ExportTo(path);
+                _lastExportPath = path;
+                UpdateStatus();
+                RitsuToastService.ShowInfo(ExtractionLocalization.SaveExportDoneText());
+            }
+            catch (Exception ex)
+            {
+                Entry.Logger.Error($"SaveTransfer export failed: {ex}");
+                RitsuToastService.ShowError(ExtractionLocalization.SaveExportFailedText());
+            }
+        };
+        PopupFileDialog(dialog);
+    }
+
+    private static void ImportSaveClicked(IModSettingsUiActionHost host)
+    {
+        if (IsRunOrLobbyActive() || WarehouseHubScreen.Current != null)
+        {
+            RitsuToastService.ShowWarning(ExtractionLocalization.SaveImportBlockedText());
+            return;
+        }
+
+        if (Engine.GetMainLoop() is not SceneTree { Root: not null })
+        {
+            RitsuToastService.ShowWarning(ExtractionLocalization.SaveImportBlockedText());
+            return;
+        }
+
+        var dialog = new FileDialog
+        {
+            Title = ExtractionLocalization.SaveImportDialogTitleText(),
+            FileMode = FileDialog.FileModeEnum.OpenFile,
+            Access = FileDialog.AccessEnum.Filesystem,
+        };
+        dialog.AddFilter("*.zip", "ZIP");
+        dialog.FileSelected += path =>
+        {
+            dialog.QueueFree();
+            BeginImport(path, host);
+        };
+        PopupFileDialog(dialog);
+    }
+
+    /// <summary>
+    /// Shows a <see cref="FileDialog"/> as an embedded modal over the settings overlay, mirroring RitsuLib's native-file
+    /// dialog chrome: a shielded CanvasLayer holds the dialog so <c>PopupCenteredRatio</c> works (a Godot Window must be
+    /// inside the tree to pop up), the shield traps clicks so the settings UI behind stays inert, and everything is
+    /// cleaned up when the dialog closes. 以嵌入模态方式在设置覆盖层之上弹出 FileDialog（镜像 RitsuLib 的原生文件对话框
+    /// chrome）：带屏蔽层的 CanvasLayer 承载对话框（Godot Window 必须在树内才能弹窗），屏蔽层拦截点击使背后的设置界面
+    /// 不可操作，对话框关闭时整体清理。
+    /// </summary>
+    private static void PopupFileDialog(FileDialog dialog)
+    {
+        if (Engine.GetMainLoop() is not SceneTree { Root: not null } tree)
+        {
+            dialog.QueueFree();
+            return;
+        }
+
+        var layer = new CanvasLayer { Name = "SaveTransferFileDialogModal", Layer = 300 };
+        tree.Root.AddChild(layer);
+
+        var shield = new Control
+        {
+            Name = "SaveTransferFileDialogShield",
+            MouseFilter = Control.MouseFilterEnum.Stop,
+        };
+        shield.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        layer.AddChild(shield);
+
+        var dim = new ColorRect
+        {
+            Name = "SaveTransferFileDialogDim",
+            Color = new Color(0f, 0f, 0f, 0.45f),
+            MouseFilter = Control.MouseFilterEnum.Stop,
+        };
+        dim.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        shield.AddChild(dim);
+
+        layer.AddChild(dialog);
+        dialog.Name = "SaveTransferNativeFileDialog";
+        dialog.Exclusive = true;
+        dialog.Unresizable = false;
+        dialog.MinSize = new Vector2I(760, 520);
+        dialog.Size = dialog.MinSize;
+
+        dialog.Canceled += () => CloseFileDialogChrome(layer, dialog);
+        dialog.CloseRequested += () => CloseFileDialogChrome(layer, dialog);
+        dialog.TreeExiting += () =>
+        {
+            if (GodotObject.IsInstanceValid(layer))
+            {
+                layer.QueueFree();
+            }
+        };
+
+        dialog.PopupCenteredRatio(0.68f);
+    }
+
+    private static void CloseFileDialogChrome(CanvasLayer layer, FileDialog dialog)
+    {
+        if (GodotObject.IsInstanceValid(dialog))
+        {
+            dialog.QueueFree();
+        }
+
+        if (GodotObject.IsInstanceValid(layer))
+        {
+            layer.QueueFree();
+        }
+    }
+
+    /// <summary>
+    /// Validates the selected archive (nothing is written yet), then shows the 覆盖/合并/取消 confirm dialog listing the
+    /// slots that would change. 校验所选包（此时不写任何数据），然后弹出「覆盖/合并/取消」确认框并列出将变化的槽。
+    /// </summary>
+    private static void BeginImport(string path, IModSettingsUiActionHost host)
+    {
+        List<SaveTransfer.ImportedSlot> slots;
+        try
+        {
+            slots = SaveTransfer.ReadAndValidate(path);
+        }
+        catch (SaveTransfer.SaveTransferException ex)
+        {
+            RitsuToastService.ShowError(ExtractionLocalization.SaveImportFailedText(ex.Message));
+            return;
+        }
+        catch (Exception ex)
+        {
+            Entry.Logger.Error($"SaveTransfer import read failed: {ex}");
+            RitsuToastService.ShowError(
+                ExtractionLocalization.SaveImportFailedText(ExtractionLocalization.SaveImportErrorUnexpectedText()));
+            return;
+        }
+
+        string names = string.Join(", ", slots.Select(s => s.FileName));
+        var dialog = new ExtractionImportDialog(
+            ExtractionLocalization.SaveImportConfirmHeaderText(),
+            ExtractionLocalization.SaveImportConfirmBodyText(slots.Count, names),
+            () => FinishImport(slots, SaveTransfer.ImportMode.Overwrite, host),
+            () => FinishImport(slots, SaveTransfer.ImportMode.Merge, host));
+        AddOverlay(dialog);
+    }
+
+    /// <summary>
+    /// Runs on a confirmed import: backs up the current state first, then applies the validated slots through the live
+    /// ModDataStore instances and refreshes the settings page. 确认导入后执行：先备份当前状态，再通过 ModDataStore 活实例
+    /// 应用校验通过的槽，并刷新设置页。
+    /// </summary>
+    private static void FinishImport(List<SaveTransfer.ImportedSlot> slots, SaveTransfer.ImportMode mode,
+        IModSettingsUiActionHost host)
+    {
+        string? backupName = SaveTransfer.CreateBackup();
+        if (backupName == null)
+        {
+            RitsuToastService.ShowWarning(ExtractionLocalization.SaveImportBackupFailedText());
+        }
+
+        try
+        {
+            SaveTransfer.Apply(slots, mode);
+            _lastImportedSlotCount = slots.Count;
+            _lastBackupName = backupName;
+            UpdateStatus();
+            host.RequestRefreshAfterDataModelBatchChange();
+            RitsuToastService.ShowInfo(ExtractionLocalization.SaveImportDoneText());
+        }
+        catch (Exception ex)
+        {
+            Entry.Logger.Error($"SaveTransfer import apply failed: {ex}");
+            RitsuToastService.ShowError(
+                ExtractionLocalization.SaveImportFailedText(ExtractionLocalization.SaveImportErrorUnexpectedText()));
         }
     }
 

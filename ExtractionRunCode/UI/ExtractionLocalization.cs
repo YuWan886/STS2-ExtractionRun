@@ -321,6 +321,38 @@ public static class ExtractionLocalization
         ModSettingsText.LocString(SettingsTable, "extractionrun.settings.reset.description",
             "Restore all Search-Loot-Extract settings to their default values.");
 
+    // ----- Save transfer 存档管理 (settings page strings) -----
+
+    public static ModSettingsText SaveTransferSectionTitleText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.section.saveTransfer.title", "Save Transfer");
+
+    public static ModSettingsText SaveExportLabelText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.save.export.label", "Export save");
+
+    public static ModSettingsText SaveExportButtonText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.save.export.button", "Export");
+
+    public static ModSettingsText SaveExportDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.save.export.description",
+            "Pack the complete Search-Loot-Extract save (warehouse, pending carry, shop, challenges and settings) into a ZIP file.");
+
+    public static ModSettingsText SaveImportLabelText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.save.import.label", "Import save");
+
+    public static ModSettingsText SaveImportButtonText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.save.import.button", "Import");
+
+    public static ModSettingsText SaveImportDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.save.import.description",
+            "Restore a save from a previously exported ZIP. Only available from the main menu outside a run or lobby.");
+
+    public static ModSettingsText SaveStatusLabelText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.save.status.label", "Status");
+
+    public static ModSettingsText SaveStatusDescriptionText() =>
+        ModSettingsText.LocString(SettingsTable, "extractionrun.settings.save.status.description",
+            "Latest export/import results and the mod-data cloud sync toggle state.");
+
     // ----- Warehouse hub UI (LocString on the main_menu_ui table) -----
 
     public static string HubTitleText() => Text("EXTRACTION_RUN.hub.title");
@@ -535,6 +567,40 @@ public static class ExtractionLocalization
 
     /// <summary>Toast shown when the capacity toggle was blocked (run/lobby active). 局内/大厅中切换被拒的提示。</summary>
     public static string CapacityBlockedText() => Text("EXTRACTION_RUN.capacity.blocked");
+
+    // ----- Save transfer 存档管理 (dialogs, toasts, status) -----
+
+    public static string SaveExportDialogTitleText() => Text("EXTRACTION_RUN.save.exportDialogTitle");
+    public static string SaveImportDialogTitleText() => Text("EXTRACTION_RUN.save.importDialogTitle");
+    public static string SaveImportBlockedText() => Text("EXTRACTION_RUN.save.importBlocked");
+    public static string SaveImportConfirmHeaderText() => Text("EXTRACTION_RUN.save.import.header");
+    public static string SaveImportConfirmBodyText(int count, string names) =>
+        Formatted("EXTRACTION_RUN.save.import.body", count, names);
+    public static string SaveImportOverwriteButtonText() => Text("EXTRACTION_RUN.save.import.overwrite");
+    public static string SaveImportMergeButtonText() => Text("EXTRACTION_RUN.save.import.merge");
+    public static string SaveExportDoneText() => Text("EXTRACTION_RUN.save.export.done");
+    public static string SaveExportFailedText() => Text("EXTRACTION_RUN.save.export.failed");
+    public static string SaveImportDoneText() => Text("EXTRACTION_RUN.save.import.done");
+    public static string SaveImportFailedText(string reason) => Formatted("EXTRACTION_RUN.save.import.failed", reason);
+    public static string SaveImportErrorUnexpectedText() => Text("EXTRACTION_RUN.save.import.error.unexpected");
+    public static string SaveImportBackupFailedText() => Text("EXTRACTION_RUN.save.import.backupFailed");
+    public static string SaveErrorNotZipText() => Text("EXTRACTION_RUN.save.error.notZip");
+    public static string SaveErrorNoManifestText() => Text("EXTRACTION_RUN.save.error.noManifest");
+    public static string SaveErrorBadManifestText() => Text("EXTRACTION_RUN.save.error.badManifest");
+    public static string SaveErrorVersionText(int found, int supported) =>
+        Formatted("EXTRACTION_RUN.save.error.version", found, supported);
+    public static string SaveErrorBadJsonText(string fileName) => Formatted("EXTRACTION_RUN.save.error.badJson", fileName);
+    public static string SaveErrorMissingFieldText(string fileName) =>
+        Formatted("EXTRACTION_RUN.save.error.missingField", fileName);
+    public static string SaveErrorEmptyText() => Text("EXTRACTION_RUN.save.error.empty");
+    public static string SaveStatusCloudText(bool on) =>
+        Text(on ? "EXTRACTION_RUN.save.status.cloudOn" : "EXTRACTION_RUN.save.status.cloudOff");
+    public static string SaveStatusLastExportText(string path) =>
+        Formatted("EXTRACTION_RUN.save.status.lastExport", path);
+    public static string SaveStatusLastImportText(int count) =>
+        Formatted("EXTRACTION_RUN.save.status.lastImport", count);
+    public static string SaveStatusLastBackupText(string name) =>
+        Formatted("EXTRACTION_RUN.save.status.lastBackup", name);
 
     // ----- Settlement screen 结算界面 -----
 

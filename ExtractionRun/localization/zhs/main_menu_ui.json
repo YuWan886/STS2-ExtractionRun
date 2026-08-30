@@ -248,5 +248,31 @@
   "EXTRACTION_RUN.lanConnect.mode": "搜打撤",
 
   "EXTRACTION_RUN.toast.deposit": "撤离成功！战利品已存入仓库。",
-  "EXTRACTION_RUN.toast.firstSeed": "已为仓库发放初始与普通卡牌、遗物及 1000 金币。"
+  "EXTRACTION_RUN.toast.firstSeed": "已为仓库发放初始与普通卡牌、遗物及 1000 金币。",
+
+  "EXTRACTION_RUN.save.exportDialogTitle": "导出搜打撤存档",
+  "EXTRACTION_RUN.save.importDialogTitle": "导入搜打撤存档",
+  "EXTRACTION_RUN.save.importBlocked": "导入仅可在主菜单、非局内/大厅时进行。",
+  "EXTRACTION_RUN.save.import.header": "导入存档",
+  "EXTRACTION_RUN.save.import.body": "存档包含 {0} 个数据文件：{1}。导入前会先备份当前数据。",
+  "EXTRACTION_RUN.save.import.overwrite": "覆盖",
+  "EXTRACTION_RUN.save.import.merge": "合并",
+  "EXTRACTION_RUN.save.export.done": "存档已导出。",
+  "EXTRACTION_RUN.save.export.failed": "导出失败。",
+  "EXTRACTION_RUN.save.import.done": "存档已导入。",
+  "EXTRACTION_RUN.save.import.failed": "导入失败：{0}",
+  "EXTRACTION_RUN.save.import.error.unexpected": "未知错误",
+  "EXTRACTION_RUN.save.import.backupFailed": "无法备份当前数据，导入仍已执行。",
+  "EXTRACTION_RUN.save.error.notZip": "所选文件不是有效的 ZIP 压缩包。",
+  "EXTRACTION_RUN.save.error.noManifest": "压缩包内缺少 manifest.json。",
+  "EXTRACTION_RUN.save.error.badManifest": "压缩包的清单文件无效。",
+  "EXTRACTION_RUN.save.error.version": "不支持的存档格式版本 {0}（本 mod 支持 {1}）。",
+  "EXTRACTION_RUN.save.error.badJson": "数据文件 {0} 不是有效的 JSON。",
+  "EXTRACTION_RUN.save.error.missingField": "数据文件 {0} 缺少必要字段。",
+  "EXTRACTION_RUN.save.error.empty": "压缩包内没有可识别的数据文件。",
+  "EXTRACTION_RUN.save.status.cloudOn": "mod 数据云同步：开",
+  "EXTRACTION_RUN.save.status.cloudOff": "mod 数据云同步：关",
+  "EXTRACTION_RUN.save.status.lastExport": "最近导出：{0}",
+  "EXTRACTION_RUN.save.status.lastImport": "最近导入：{0} 个数据文件",
+  "EXTRACTION_RUN.save.status.lastBackup": "最近备份：{0}"
 }

@@ -248,5 +248,31 @@
   "EXTRACTION_RUN.lanConnect.mode": "Extract",
 
   "EXTRACTION_RUN.toast.deposit": "Extraction successful! Loot deposited into your warehouse.",
-  "EXTRACTION_RUN.toast.firstSeed": "Warehouse seeded with starter & common cards, starter & common relics and 1000 gold."
+  "EXTRACTION_RUN.toast.firstSeed": "Warehouse seeded with starter & common cards, starter & common relics and 1000 gold.",
+
+  "EXTRACTION_RUN.save.exportDialogTitle": "Export Search-Loot-Extract save",
+  "EXTRACTION_RUN.save.importDialogTitle": "Import Search-Loot-Extract save",
+  "EXTRACTION_RUN.save.importBlocked": "Import is only available from the main menu, outside a run or lobby.",
+  "EXTRACTION_RUN.save.import.header": "Import save",
+  "EXTRACTION_RUN.save.import.body": "The archive contains {0} slot file(s): {1}. A backup of your current data will be saved first.",
+  "EXTRACTION_RUN.save.import.overwrite": "Overwrite",
+  "EXTRACTION_RUN.save.import.merge": "Merge",
+  "EXTRACTION_RUN.save.export.done": "Save exported.",
+  "EXTRACTION_RUN.save.export.failed": "Export failed.",
+  "EXTRACTION_RUN.save.import.done": "Save imported.",
+  "EXTRACTION_RUN.save.import.failed": "Import failed: {0}",
+  "EXTRACTION_RUN.save.import.error.unexpected": "unexpected error",
+  "EXTRACTION_RUN.save.import.backupFailed": "Could not create a backup of the current data; the import was applied anyway.",
+  "EXTRACTION_RUN.save.error.notZip": "The selected file is not a valid ZIP archive.",
+  "EXTRACTION_RUN.save.error.noManifest": "The archive has no manifest.json.",
+  "EXTRACTION_RUN.save.error.badManifest": "The archive manifest is invalid.",
+  "EXTRACTION_RUN.save.error.version": "Unsupported save format version {0} (this mod supports {1}).",
+  "EXTRACTION_RUN.save.error.badJson": "Slot file {0} is not valid JSON.",
+  "EXTRACTION_RUN.save.error.missingField": "Slot file {0} is missing required fields.",
+  "EXTRACTION_RUN.save.error.empty": "The archive contains no recognized slot files.",
+  "EXTRACTION_RUN.save.status.cloudOn": "Mod-data cloud sync: on",
+  "EXTRACTION_RUN.save.status.cloudOff": "Mod-data cloud sync: off",
+  "EXTRACTION_RUN.save.status.lastExport": "Last export: {0}",
+  "EXTRACTION_RUN.save.status.lastImport": "Last import: {0} slot file(s)",
+  "EXTRACTION_RUN.save.status.lastBackup": "Last backup: {0}"
 }

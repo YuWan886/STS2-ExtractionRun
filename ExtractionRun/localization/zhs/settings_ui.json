@@ -86,5 +86,15 @@
   "extractionrun.settings.section.reset.title": "重置",
   "extractionrun.settings.reset.label": "重置默认值",
   "extractionrun.settings.reset.button": "重置",
-  "extractionrun.settings.reset.description": "将所有搜打撤设置恢复为默认值。"
+  "extractionrun.settings.reset.description": "将所有搜打撤设置恢复为默认值。",
+
+  "extractionrun.settings.section.saveTransfer.title": "存档管理",
+  "extractionrun.settings.save.export.label": "导出存档",
+  "extractionrun.settings.save.export.button": "导出",
+  "extractionrun.settings.save.export.description": "把搜打撤的完整存档（仓库、待发携带、商店、挑战与设置）打包为 ZIP 文件。",
+  "extractionrun.settings.save.import.label": "导入存档",
+  "extractionrun.settings.save.import.button": "导入",
+  "extractionrun.settings.save.import.description": "从之前导出的 ZIP 恢复存档。仅可在主菜单、非局内/大厅时使用。",
+  "extractionrun.settings.save.status.label": "状态",
+  "extractionrun.settings.save.status.description": "最近的导出/导入结果与 mod 数据云同步开关状态。"
 }
