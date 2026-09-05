@@ -103,6 +103,21 @@ public static class ExtractionPointSettingsSync
     }
 
     /// <summary>
+    /// Registers the handlers against the current run's net service. A resumed (save-loaded) extraction run never
+    /// passes through the character-select lobby, where the handlers would otherwise be registered — without this the
+    /// host receives a client's extraction confirm with no handler and the confirm barrier hangs forever.
+    /// 读档恢复的跑局不经过选人大厅（句柄本应在那里注册）——不补注册的话，主机收到客机确认消息无人处理，确认屏障永久挂起。
+    /// </summary>
+    public static void RegisterWithCurrentNetService()
+    {
+        INetGameService? netService = RunManager.Instance?.NetService;
+        if (netService != null)
+        {
+            EnsureRegistered(netService);
+        }
+    }
+
+    /// <summary>
     /// Broadcasts that the local player confirmed their 撤离点 panel. SP no-ops (the barrier trivially completes with
     /// the single local player). Re-resolves the net service if the lobby-time registration went stale (the run's
     /// service may differ across sessions). 广播本机玩家已确认撤离面板；单机无需广播（唯一玩家即全队）。若大厅期注册的 net

@@ -349,6 +349,9 @@ public sealed class ExtractionModifier : ModifierModel
     {
         // Reloading a saved extraction run must NOT re-inject or re-consume — the deck is already in the save and the
         // carried items were consumed when the run first started. Intentional no-op.
+        // 读档重连流程不经过 CharacterSelectPatch，那里注册的撤离点网络句柄在新会话里不存在——主机收到客机的确认消息
+        // 会无人处理，撤离屏障永久等不到远端。读档时 NetService 已就绪，补注册一次。
+        ExtractionPointSettingsSync.RegisterWithCurrentNetService();
     }
 
     /// <summary>Applies the per-act curse rule only after an act transition; it never replays on a save load.</summary>

@@ -118,7 +118,7 @@ public static class ExtractionPointMapPatch
             Texture2D? texture = null;
             try
             {
-                texture = ResourceLoader.Load<Texture2D>("res://ExtractionRun/images/events/extraction_point_event.png");
+                texture = ResourceLoader.Load<Texture2D>(ExtractionPointEvent.PortraitPath);
             }
             catch (Exception)
             {

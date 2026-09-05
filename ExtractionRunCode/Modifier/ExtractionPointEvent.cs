@@ -30,6 +30,22 @@ public sealed class ExtractionPointEvent : EventModel
 {
     public override bool IsShared => true;
 
+    /// <summary>The mod's own portrait asset. The game derives res://images/events/{id}.png for every event, which a
+    /// mod can't provide — <see cref="GetAssetPaths"/> swaps it into the preload list so the room preload doesn't
+    /// hard-ERROR on the missing base path (the portrait patch then loads this path).
+    /// mod 自带立绘。游戏对每个事件按 res://images/events/{id}.png 推导路径，mod 无法提供——GetAssetPaths 在预载列表
+    /// 里把它换成该路径，避免房间预载因缺失的基础路径报错（立绘补丁随后加载此路径）。</summary>
+    public const string PortraitPath = "res://ExtractionRun/images/events/extraction_point_event.png";
+
+    public override IEnumerable<string> GetAssetPaths(IRunState runState)
+    {
+        string vanilla = MegaCrit.Sts2.Core.Helpers.ImageHelper.GetImagePath($"events/{Id.Entry.ToLowerInvariant()}.png");
+        foreach (string path in base.GetAssetPaths(runState))
+        {
+            yield return path == vanilla ? PortraitPath : path;
+        }
+    }
+
     protected override IReadOnlyList<EventOption> GenerateInitialOptions()
     {
         Player me = Owner!;
