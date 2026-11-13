@@ -2,7 +2,7 @@
     <Import Project=".\Sts2PathDiscovery.props"/>
     <PropertyGroup>
         <TargetFramework>net9.0</TargetFramework>
-        <Version>0.1.8</Version>
+        <Version>0.1.9</Version>
         <LangVersion>13.0</LangVersion>
         <ImplicitUsings>true</ImplicitUsings>
         <Nullable>enable</Nullable>
@@ -40,6 +40,12 @@
         <DefineConstants>$(DefineConstants);STS2_DAMAGE_HOOK_HAS_CARD_PLAY;STS2_CARD_CREATION_OPTIONS_HAS_WITH_FILTER</DefineConstants>
     </PropertyGroup>
 
+    <!-- 0.113 removed GameMode.Custom (custom runs are GameMode.Standard plus an isCustom flag) and split
+         NSubmenuButton.SetIconAndLocalization into SetLocalization + SetIcon. -->
+    <PropertyGroup Condition="'$(EffectiveVariantTarget)' != '' and $([System.Version]::Parse('$(EffectiveVariantTarget)')) >= $([System.Version]::Parse('0.113.0'))">
+        <DefineConstants>$(DefineConstants);STS2_API_0_113_OR_LATER</DefineConstants>
+    </PropertyGroup>
+
     <ItemGroup Condition="Exists('$(Sts2DataDir)')">
         <Reference Include="0Harmony">
             <HintPath>$(Sts2DataDir)/0Harmony.dll</HintPath>
@@ -66,7 +72,7 @@
     <ItemGroup>
         <PackageReference Include="Krafs.Publicizer" Version="2.3.0" PrivateAssets="All"/>
         <PackageReference Include="Alchyr.Sts2.ModAnalyzers" Version="*"/>
-        <PackageReference Include="STS2.RitsuLib"  Version="0.5.12"/>
+        <PackageReference Include="STS2.RitsuLib"  Version="0.6.11"/>
         <AdditionalFiles Include="ExtractionRun/localization/**/*.json"/>
     </ItemGroup>
 

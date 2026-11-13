@@ -43,7 +43,7 @@ public static class Entry
         ExtractionRunEnd.Register();
 
         Harmony harmony = new(ModId);
-        harmony.PatchAll(assembly);
+        PatchAllIndividually(harmony, assembly);
 
         // Some hosts (beta) reject modifier/seed changes on the character-select lobby; adapt at runtime.
         ModifierChangeCompat.InstallIfNeeded(harmony);
@@ -56,5 +56,45 @@ public static class Entry
         ExtractionReconnectCompat.InstallIfNeeded(harmony);
 
         Logger.Info("ExtractionRun initialized.");
+    }
+
+    /// <summary>
+    /// Applies every patch class on its own instead of <c>Harmony.PatchAll</c>, which aborts the whole batch when a
+    /// single class has a stale target (Harmony throws on a target resolving to null / a renamed member). One host API
+    /// change then costs exactly the feature that used it — logged loudly — instead of silently disabling every patch
+    /// class ordered after it in the assembly.
+    /// 逐个应用补丁类：单个类的目标失效只损失该功能并报错，不再让整批补丁中止。
+    /// </summary>
+    private static void PatchAllIndividually(Harmony harmony, Assembly assembly)
+    {
+        Type[] types;
+        try
+        {
+            types = assembly.GetTypes();
+        }
+        catch (ReflectionTypeLoadException ex)
+        {
+            types = ex.Types.Where(type => type != null).ToArray()!;
+        }
+
+        List<string> failures = [];
+        foreach (Type type in types)
+        {
+            try
+            {
+                harmony.CreateClassProcessor(type).Patch();
+            }
+            catch (Exception ex)
+            {
+                string reason = (ex.GetBaseException() ?? ex).Message.Trim();
+                failures.Add($"{type.FullName}: {reason}");
+                Logger.Error($"[Harmony] patch class {type.FullName} could not be applied on this host: {reason}");
+            }
+        }
+
+        if (failures.Count > 0)
+        {
+            Logger.Warn($"[Harmony] {failures.Count} patch class(es) skipped on this host: {string.Join(" | ", failures)}");
+        }
     }
 }

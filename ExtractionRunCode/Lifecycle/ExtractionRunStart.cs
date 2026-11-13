@@ -24,6 +24,18 @@ public static class ExtractionRunStart
     [HarmonyPriority(Priority.First)]
     private static class StartSingleplayerPrefix
     {
+#if STS2_API_0_113_OR_LATER
+        private static void Prefix(ref IReadOnlyList<ModifierModel> modifiers, ref bool isCustomGame)
+        {
+            if (ExtractionRunContext.PendingRunModifiers is { } pending)
+            {
+                modifiers = pending;
+                ExtractionRunContext.PendingRunModifiers = null;
+                ExtractionRunContext.PendingSeed = null;
+                isCustomGame = true;
+            }
+        }
+#else
         private static void Prefix(ref IReadOnlyList<ModifierModel> modifiers, ref GameMode gameMode)
         {
             if (ExtractionRunContext.PendingRunModifiers is { } pending)
@@ -34,6 +46,7 @@ public static class ExtractionRunStart
                 gameMode = GameMode.Custom;
             }
         }
+#endif
     }
 
     /// <summary>Harmony <c>NGame.StartNewMultiplayerRun</c> prefix: restore stashed modifiers and force Custom mode.</summary>
@@ -52,7 +65,12 @@ public static class ExtractionRunStart
                 PropertyInfo? gameModeProperty = typeof(StartRunLobby).GetProperty(nameof(StartRunLobby.GameMode));
                 if (gameModeProperty != null)
                 {
+#if STS2_API_0_113_OR_LATER
+                    gameModeProperty.SetValue(lobby, GameMode.Standard);
+                    typeof(StartRunLobby).GetProperty(nameof(StartRunLobby.IsCustom))?.SetValue(lobby, true);
+#else
                     gameModeProperty.SetValue(lobby, GameMode.Custom);
+#endif
                 }
             }
         }

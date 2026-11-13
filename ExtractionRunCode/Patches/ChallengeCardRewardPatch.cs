@@ -12,8 +12,21 @@ namespace ExtractionRun.Patches;
 [HarmonyPatch]
 public static class ChallengeCardRewardPatch
 {
-    private static ConstructorInfo? TargetMethod() => AccessTools.Constructor(typeof(CardReward),
-        [typeof(CardCreationOptions), typeof(int), typeof(Player), typeof(PlayerChoiceSynchronizer)]);
+    /// <summary>
+    /// 0.113 appended <c>CardSelectorStack</c> to this constructor (and made the trailing args optional), so the old
+    /// frozen 4-parameter signature no longer exists. Match the stable prefix (options, count, player) instead of an
+    /// exact signature, so 0.107 ~ 0.111 and 0.113+ all resolve. Returning null here aborts Harmony.PatchAll for the
+    /// whole assembly, which silently disabled every patch class ordered after this one.
+    /// </summary>
+    private static ConstructorInfo? TargetMethod()
+        => AccessTools.GetDeclaredConstructors(typeof(CardReward)).FirstOrDefault(ctor =>
+        {
+            ParameterInfo[] parameters = ctor.GetParameters();
+            return parameters.Length >= 3
+                   && parameters[0].ParameterType == typeof(CardCreationOptions)
+                   && parameters[1].ParameterType == typeof(int)
+                   && parameters[2].ParameterType == typeof(Player);
+        });
 
     private static void Prefix(ref int cardCount)
     {

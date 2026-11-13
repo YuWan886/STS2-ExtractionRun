@@ -1764,7 +1764,11 @@ public sealed partial class WarehouseHubScreen : CanvasLayer
         // stages the pending carry into the lobby.
         if (_mode == HubMode.MultiplayerHost)
         {
+#if STS2_API_0_113_OR_LATER
+            TaskHelper.RunSafely(NMultiplayerHostSubmenu.StartHostAsync(GameMode.Standard, isCustom: false, _loadingOverlay!, _stack));
+#else
             TaskHelper.RunSafely(NMultiplayerHostSubmenu.StartHostAsync(GameMode.Standard, _loadingOverlay!, _stack));
+#endif
         }
         else
         {
